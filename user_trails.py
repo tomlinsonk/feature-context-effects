@@ -116,7 +116,7 @@ def toy_example():
 
 def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices):
 
-    model = HistoryCDM(n, 3, 0.8)
+    model = HistoryCDM(n, 64, 0.8)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, amsgrad=True, weight_decay=1e-4)
     for t in tqdm(range(500)):
@@ -129,6 +129,8 @@ def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_len
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+    return model
 
 
 def remove_back(path):
@@ -213,7 +215,8 @@ def load_wikispeedia():
     choice_set_lengths = torch.tensor(choice_set_lengths)
     choices = torch.tensor(choices)
 
-    train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
+    model = train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
+    torch.save(model.state_dict(), 'wikispeedia_params.pt')
 
 
 if __name__ == '__main__':
