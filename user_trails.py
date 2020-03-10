@@ -8,6 +8,45 @@ import collections
 from tqdm import tqdm
 
 
+class DataLoader:
+    """
+    Simplified, faster DataLoader.
+    From https://github.com/arjunsesh/cdm-icml with minor tweaks.
+    """
+    def __init__(self, data, batch_size=None, shuffle=False):
+        self.data = data
+        self.data_size = data[0].shape[0]
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.counter = 0
+        self.stop_iteration = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.stop_iteration:
+            self.stop_iteration = False
+            raise StopIteration()
+
+        if self.batch_size is None or self.batch_size == self.data_size:
+            self.stop_iteration = True
+            return self.data
+        else:
+            i = self.counter
+            bs = self.batch_size
+            self.counter += 1
+            batch = [item[i * bs:(i + 1) * bs] for item in self.data]
+            if self.counter * bs >= self.data_size:
+                self.counter = 0
+                self.stop_iteration = True
+                if self.shuffle:
+                    random_idx = np.arange(self.data_size)
+                    np.random.shuffle(random_idx)
+                    self.data = [item[random_idx] for item in self.data]
+            return batch
+
+
 class Embedding(nn.Module):
     """
     Add zero-ed out dimension to Embedding for the padding index.
@@ -117,18 +156,18 @@ def toy_example():
 def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices):
 
     model = HistoryCDM(n, 64, 0.8)
+    data_loader = DataLoader((histories, history_lengths, choice_sets, choice_set_lengths, choices),
+                             batch_size=128, shuffle=True)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, amsgrad=True, weight_decay=1e-4)
-    for t in tqdm(range(500)):
-        choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
-
-        loss = model.loss(choice_pred, choices)
-        if t % 100 == 99:
-            print(t, loss.item())
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+    for epoch in tqdm(range(500)):
+        model.train()
+        for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
+            choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
+            loss = model.loss(choice_pred, choices)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
     return model
 
@@ -162,8 +201,6 @@ def load_wikispeedia():
         split_path = path.split(';')
         remove_back(split_path)
         paths.append(split_path)
-
-    print('Max out-degree:', max(graph.out_degree()))
 
     counter = collections.Counter([len(path) for path in paths])
 
