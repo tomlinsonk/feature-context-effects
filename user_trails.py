@@ -181,7 +181,6 @@ def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_len
             count += 1
 
         total_loss /= count
-        print(total_loss)
         losses.append(total_loss)
 
     return model, losses
@@ -292,7 +291,7 @@ def load_wikispeedia():
 def grid_search_wikispeedia():
     dims = [16, 64, 128]
     lrs = [0.1, 0.005, 0.0001]
-    wds = [0.0001, 0.1, 0.005]
+    wds = [0.1, 0.0001, 0]
 
     graph, train_data, val_data, test_data = load_wikispeedia()
     n = len(graph.nodes)
