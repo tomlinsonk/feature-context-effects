@@ -163,14 +163,26 @@ def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_len
                              batch_size=128, shuffle=True)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, amsgrad=True, weight_decay=weight_decay)
+
+    losses = []
     for epoch in tqdm(range(500)):
-        model.train()
+        total_loss = 0
+        count = 0
         for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
+            model.train()
             choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
             loss = model.loss(choice_pred, choices)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
+            model.eval()
+            total_loss += loss.item()
+            count += 1
+
+        total_loss /= count
+        print(total_loss)
+        losses.append(total_loss)
 
     return model
 
