@@ -269,8 +269,8 @@ def test_wikispeedia():
 
     for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
         choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
-        vals, idxs = choice_pred.max(0)
-        print(idxs, choices)
+        vals, idxs = choice_pred.max(1)
+        print(idxs == choices)
 
 
 if __name__ == '__main__':
