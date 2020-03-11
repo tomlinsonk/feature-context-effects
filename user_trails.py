@@ -256,11 +256,11 @@ def load_wikispeedia():
 
 
 def test_wikispeedia():
+    n, histories, history_lengths, choice_sets, choice_set_lengths, choices, graph = load_wikispeedia()
+
     model = HistoryCDM(n, 64, 0.8)
     model.load_state_dict(torch.load('wikispeedia_params.pt'))
     model.eval()
-
-    n, histories, history_lengths, choice_sets, choice_set_lengths, choices, graph = load_wikispeedia()
 
     print(n)
 
