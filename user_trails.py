@@ -184,7 +184,7 @@ def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_len
         print(total_loss)
         losses.append(total_loss)
 
-    return model
+    return model, losses
 
 
 def remove_back(path):
@@ -292,7 +292,7 @@ def load_wikispeedia():
 def grid_search_wikispeedia():
     dims = [16, 64, 128]
     lrs = [0.1, 0.005, 0.0001]
-    wds = [0.1, 0.005, 0.0001]
+    wds = [0.0001, 0.1, 0.005]
 
     graph, train_data, val_data, test_data = load_wikispeedia()
     n = len(graph.nodes)
@@ -301,8 +301,10 @@ def grid_search_wikispeedia():
         for lr in lrs:
             for wd in wds:
                 print(f'Training dim {dim}, lr {lr}, wd {wd}...')
-                model = train_history_cdm(n, *train_data, dim=dim, lr=lr, weight_decay=wd)
+                model, losses = train_history_cdm(n, *train_data, dim=dim, lr=lr, weight_decay=wd)
                 torch.save(model.state_dict(), f'wikispeedia_params_{dim}_{lr}_{wd}.pt')
+                with open(f'wikispeedia_losses_{dim}_{lr}_{wd}.pickle', 'wb') as f:
+                    pickle.dump(losses, f)
 
 
 def test_wikispeedia():
@@ -346,7 +348,7 @@ def test_wikispeedia():
 if __name__ == '__main__':
     # n, histories, history_lengths, choice_sets, choice_set_lengths, choices, graph = load_wikispeedia()
     #
-    # model = train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
+    # model, losses = train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
     # torch.save(model.state_dict(), 'wikispeedia_params.pt')
     # test_wikispeedia()
     grid_search_wikispeedia()
