@@ -262,9 +262,13 @@ def test_wikispeedia():
     model.load_state_dict(torch.load('wikispeedia_params.pt'))
     model.eval()
 
-    print(n)
+    print(len(graph.edges))
 
-    print(model(histories, history_lengths, choice_sets, choice_set_lengths))
+    data_loader = DataLoader((histories, history_lengths, choice_sets, choice_set_lengths, choices),
+                             batch_size=128, shuffle=True)
+
+    for histories, history_lengths, choice_sets, choice_set_lengths in data_loader:
+        print(model(histories, history_lengths, choice_sets, choice_set_lengths))
 
 
 if __name__ == '__main__':
