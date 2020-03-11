@@ -252,9 +252,21 @@ def load_wikispeedia():
     choice_set_lengths = torch.tensor(choice_set_lengths)
     choices = torch.tensor(choices)
 
-    model = train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
-    torch.save(model.state_dict(), 'wikispeedia_params.pt')
+    return n, histories, history_lengths, choice_sets, choice_set_lengths, choices, graph
+
+
+def test_wikispeedia():
+    model = HistoryCDM(n, 64, 0.8)
+    model.load_state_dict(torch.load('wikispeedia_params.pt'))
+    model.eval()
+
+    n, histories, history_lengths, choice_sets, choice_set_lengths, choices, graph = load_wikispeedia()
+
+    print(model(histories, history_lengths, choice_sets, choice_set_lengths))
 
 
 if __name__ == '__main__':
-    load_wikispeedia()
+    n, histories, history_lengths, choice_sets, choice_set_lengths, choices, graph = load_wikispeedia()
+
+    model = train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
+    torch.save(model.state_dict(), 'wikispeedia_params.pt')
