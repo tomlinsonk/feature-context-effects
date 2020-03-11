@@ -291,7 +291,7 @@ def load_wikispeedia():
 def grid_search_wikispeedia():
     dims = [16, 64, 128]
     lrs = [0.1, 0.005, 0.0001]
-    wds = [0.1, 0.0001, 0]
+    wds = [0, 0.0001, 0.1]
 
     graph, train_data, val_data, test_data = load_wikispeedia()
     n = len(graph.nodes)
