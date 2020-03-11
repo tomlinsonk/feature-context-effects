@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import collections
 from tqdm import tqdm
 
+import choix
+
 
 class DataLoader:
     """
@@ -315,8 +317,8 @@ def test_wikispeedia():
 
     n = len(graph.nodes)
 
-    model = HistoryCDM(n, 64, 0.8)
-    model.load_state_dict(torch.load('wikispeedia_params.pt'))
+    model = HistoryCDM(n, 16, 0.5)
+    model.load_state_dict(torch.load('wikispeedia_params_16_0.1_0.pt'))
     model.eval()
 
     print(len(graph.edges))
@@ -335,7 +337,7 @@ def test_wikispeedia():
 
         vals, idxs = choice_pred.max(1)
         mean_rank += ranks.sum().item() / 128
-        mrr += 128 / ranks.sum().item()
+        mrr += (1 / ranks.float()).sum().item() / 128
         count += 1
         total += (idxs == choices).long().sum().item() / 128
 
@@ -344,10 +346,95 @@ def test_wikispeedia():
     print(f'Mean reciprocal rank: {mrr / count}')
 
 
+def baseline_wikispeedia():
+    graph, train_data, val_data, test_data = load_wikispeedia()
+
+    n = len(graph.nodes)
+    traffic_in = np.zeros(n)
+    traffic_out = np.zeros(n)
+
+    index_map = {graph.nodes[node]['index']: node for node in graph.nodes}
+
+    histories, history_lengths, choice_sets, choice_set_lengths, choices = train_data
+    transitions = np.zeros((n, n))
+    for i in range(len(histories)):
+        # print(f'History:{[index_map[node.item()] for node in histories[i, :history_lengths[i].item()]]}')
+        #
+        # print(f'EDGE:{index_map[histories[i][0].item()]};{index_map[choice_sets[i][choices[i]].item()]}')
+
+        transitions[histories[i][0], choice_sets[i][choices[i]]] += 1
+
+    traffic_in = transitions.sum(axis=0)
+    traffic_out = transitions.sum(axis=1)
+    params = choix.choicerank(graph, traffic_in, traffic_out)
+
+    histories, history_lengths, choice_sets, choice_set_lengths, choices = test_data
+
+    correct = 0
+    total = 0
+    mrr = 0
+    mean_rank = 0
+    for i in range(len(histories)):
+        choice_set = choice_sets[i, :choice_set_lengths[i]]
+        probs = choix.probabilities(choice_set, params)
+        total += 1
+
+        if np.argmax(probs) == choices[i].item():
+            correct += 1
+
+        rank = (torch.argsort(torch.tensor(probs), descending=True) == choices[i]).nonzero() + 1
+        mrr += 1 / rank.item()
+        mean_rank += rank.item()
+
+    print('ChoiceRank')
+    print(f'Accuracy: {correct / total}')
+    print(f'Mean rank: {mean_rank / total}')
+    print(f'Mean reciprocal rank: {mrr / total}')
+
+    correct = 0
+    total = 0
+    for i in range(len(histories)):
+        pred = np.random.randint(0, choice_set_lengths[i])
+        total += 1
+
+        if pred == choices[i].item():
+            correct += 1
+
+    print('Random baseline:')
+    print(f'Accuracy: {correct / total}')
+
+    for i in range(len(histories)):
+        choice_set = choice_sets[i, :choice_set_lengths[i]]
+        transition_counts = [transitions[histories[i][0], node] for node in choice_set]
+        total += 1
+
+        if np.argmax(transition_counts) == choices[i].item():
+            correct += 1
+
+        rank = (torch.argsort(torch.tensor(transition_counts), descending=True) == choices[i]).nonzero() + 1
+        mrr += 1 / rank.item()
+        mean_rank += rank.item()
+
+    print('Pick-most-frequent baseline')
+    print(f'Accuracy: {correct / total}')
+    print(f'Mean rank: {mean_rank / total}')
+    print(f'Mean reciprocal rank: {mrr / total}')
+
+
+def plot_loss(fname):
+    with open(fname, 'rb') as f:
+        losses = pickle.load(f)
+
+    plt.plot(range(len(losses)), losses)
+    plt.show()
+
+
 if __name__ == '__main__':
     # n, histories, history_lengths, choice_sets, choice_set_lengths, choices, graph = load_wikispeedia()
     #
     # model, losses = train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
     # torch.save(model.state_dict(), 'wikispeedia_params.pt')
     # test_wikispeedia()
-    grid_search_wikispeedia()
+    # grid_search_wikispeedia()
+    # baseline_wikispeedia()
+    plot_loss('wikispeedia_losses_16_0.1_0.pickle')
