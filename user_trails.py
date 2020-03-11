@@ -1,3 +1,6 @@
+import os
+import pickle
+
 import torch
 from torch import nn
 import numpy as np
@@ -153,13 +156,13 @@ def toy_example():
     train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
 
 
-def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices):
+def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4):
 
-    model = HistoryCDM(n, 64, 0.8)
+    model = HistoryCDM(n, dim, beta)
     data_loader = DataLoader((histories, history_lengths, choice_sets, choice_set_lengths, choices),
                              batch_size=128, shuffle=True)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, amsgrad=True, weight_decay=1e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, amsgrad=True, weight_decay=weight_decay)
     for epoch in tqdm(range(500)):
         model.train()
         for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
@@ -184,6 +187,13 @@ def remove_back(path):
 
 
 def load_wikispeedia():
+
+    if os.path.isfile('wikispeedia_data.pickle'):
+        print('Loading parsed Wikispeedia data from wikispeedia_data.pickle...')
+        with open('wikispeedia_data.pickle', 'rb') as f:
+            return pickle.load(f)
+
+    print('Reloading Wikispeedia from raw data...')
     graph = nx.read_edgelist('data/wikispeedia_paths-and-graph/links.tsv', create_using=nx.DiGraph)
     graph.add_node('Wikipedia_Text_of_the_GNU_Free_Documentation_License')
 
@@ -203,14 +213,6 @@ def load_wikispeedia():
         paths.append(split_path)
 
     counter = collections.Counter([len(path) for path in paths])
-
-    # print('total:', sum([counter[i] for i in range(max(counter)+1)]))
-    # print('20 or fewer:', sum([counter[i] for i in range(21)]))
-
-    # plt.plot(range(max_count+1), [counter[i] for i in range(max_count+1)])
-    #
-    # plt.yscale('symlog', linthreshy=1)
-    # plt.show()
 
     # Index nodes
     nodes = []
@@ -252,11 +254,53 @@ def load_wikispeedia():
     choice_set_lengths = torch.tensor(choice_set_lengths)
     choices = torch.tensor(choices)
 
-    return n, histories, history_lengths, choice_sets, choice_set_lengths, choices, graph
+    m = len(histories)
+    print('num datapoints:', m)
+    idx = list(range(m))
+
+    np.random.shuffle(idx)
+
+    train_end = int(m * 0.6)
+    val_end = train_end + int(m * 0.2)
+
+    train_idx = idx[:train_end]
+    val_idx = idx[train_end:val_end]
+    test_idx = idx[val_end:]
+
+    train_data = [data[train_idx] for data in (histories, history_lengths, choice_sets, choice_set_lengths, choices)]
+    val_data = [data[val_idx] for data in (histories, history_lengths, choice_sets, choice_set_lengths, choices)]
+    test_data = [data[test_idx] for data in (histories, history_lengths, choice_sets, choice_set_lengths, choices)]
+
+    with open('wikispeedia_data.pickle', 'wb') as f:
+        pickle.dump((graph, train_data, val_data, test_data), f)
+
+    return graph, train_data, val_data, test_data
+
+
+def grid_search_wikispeedia():
+    dims = [16, 64, 128]
+    lrs = [0.1, 0.005, 0.0001]
+    wds = [0.1, 0.005, 0.0001]
+
+    graph, train_data, val_data, test_data = load_wikispeedia()
+    n = len(graph.nodes)
+
+    for dim in dims:
+        for lr in lrs:
+            for wd in wds:
+                print(f'Training dim {dim}, lr {lr}, wd {wd}...')
+                model = train_history_cdm(n, *train_data, dim=dim, lr=lr, weight_decay=wd)
+                torch.save(model.state_dict(), f'wikispeedia_params_{dim}_{lr}_{wd}.pt')
 
 
 def test_wikispeedia():
-    n, histories, history_lengths, choice_sets, choice_set_lengths, choices, graph = load_wikispeedia()
+    graph, train_data, val_data, test_data = load_wikispeedia()
+
+    print('Train data size:', len(train_data[0]))
+    print('Val data size:', len(val_data[0]))
+    print('Test data size:', len(test_data[0]))
+
+    n = len(graph.nodes)
 
     model = HistoryCDM(n, 64, 0.8)
     model.load_state_dict(torch.load('wikispeedia_params.pt'))
@@ -264,13 +308,27 @@ def test_wikispeedia():
 
     print(len(graph.edges))
 
-    data_loader = DataLoader((histories, history_lengths, choice_sets, choice_set_lengths, choices),
-                             batch_size=128, shuffle=True)
+    data_loader = DataLoader(val_data, batch_size=128, shuffle=True)
 
+    count = 0
+    total = 0
+    mean_rank = 0
+    mrr = 0
+    total_loss = 0
     for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
         choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
+
+        ranks = (torch.argsort(choice_pred, dim=1, descending=True) == choices[:, None]).nonzero()[:, 1] + 1
+
         vals, idxs = choice_pred.max(1)
-        print(idxs == choices)
+        mean_rank += ranks.sum().item() / 128
+        mrr += 128 / ranks.sum().item()
+        count += 1
+        total += (idxs == choices).long().sum().item() / 128
+
+    print(f'Accuracy: {total / count}')
+    print(f'Mean rank: {mean_rank / count}')
+    print(f'Mean reciprocal rank: {mrr / count}')
 
 
 if __name__ == '__main__':
@@ -278,4 +336,5 @@ if __name__ == '__main__':
     #
     # model = train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
     # torch.save(model.state_dict(), 'wikispeedia_params.pt')
-    test_wikispeedia()
+    # test_wikispeedia()
+    grid_search_wikispeedia()
