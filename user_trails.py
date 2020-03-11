@@ -204,8 +204,8 @@ def load_wikispeedia():
 
     counter = collections.Counter([len(path) for path in paths])
 
-    print('total:', sum([counter[i] for i in range(max(counter)+1)]))
-    print('20 or fewer:', sum([counter[i] for i in range(21)]))
+    # print('total:', sum([counter[i] for i in range(max(counter)+1)]))
+    # print('20 or fewer:', sum([counter[i] for i in range(21)]))
 
     # plt.plot(range(max_count+1), [counter[i] for i in range(max_count+1)])
     #
@@ -222,7 +222,7 @@ def load_wikispeedia():
     longest_path = 20
     largest_choice_set = max(graph.out_degree(), key=lambda x: x[1])[1]
 
-    print(largest_choice_set)
+    # print(largest_choice_set)
 
     choice_sets = []
     choice_set_lengths = []
@@ -261,6 +261,8 @@ def test_wikispeedia():
     model.eval()
 
     n, histories, history_lengths, choice_sets, choice_set_lengths, choices, graph = load_wikispeedia()
+
+    print(n)
 
     print(model(histories, history_lengths, choice_sets, choice_set_lengths))
 
