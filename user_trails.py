@@ -268,7 +268,9 @@ def test_wikispeedia():
                              batch_size=128, shuffle=True)
 
     for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
-        print(model(histories, history_lengths, choice_sets, choice_set_lengths))
+        choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
+        vals, idxs = choice_pred.max(0)
+        print(idxs, choices)
 
 
 if __name__ == '__main__':
