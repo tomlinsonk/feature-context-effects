@@ -266,7 +266,8 @@ def test_wikispeedia():
 
 
 if __name__ == '__main__':
-    n, histories, history_lengths, choice_sets, choice_set_lengths, choices, graph = load_wikispeedia()
-
-    model = train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
-    torch.save(model.state_dict(), 'wikispeedia_params.pt')
+    # n, histories, history_lengths, choice_sets, choice_set_lengths, choices, graph = load_wikispeedia()
+    #
+    # model = train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
+    # torch.save(model.state_dict(), 'wikispeedia_params.pt')
+    test_wikispeedia()
