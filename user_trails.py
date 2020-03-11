@@ -267,7 +267,7 @@ def test_wikispeedia():
     data_loader = DataLoader((histories, history_lengths, choice_sets, choice_set_lengths, choices),
                              batch_size=128, shuffle=True)
 
-    for histories, history_lengths, choice_sets, choice_set_lengths in data_loader:
+    for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
         print(model(histories, history_lengths, choice_sets, choice_set_lengths))
 
 
