@@ -1,3 +1,4 @@
+import glob
 import os
 import pickle
 
@@ -9,6 +10,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import collections
 from tqdm import tqdm
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 import choix
 
@@ -18,13 +20,15 @@ class DataLoader:
     Simplified, faster DataLoader.
     From https://github.com/arjunsesh/cdm-icml with minor tweaks.
     """
-    def __init__(self, data, batch_size=None, shuffle=False):
+    def __init__(self, data, batch_size=None, shuffle=False, sort_batch=False, sort_index=None):
         self.data = data
         self.data_size = data[0].shape[0]
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.counter = 0
         self.stop_iteration = False
+        self.sort_batch = sort_batch
+        self.sort_index = sort_index
 
     def __iter__(self):
         return self
@@ -49,6 +53,11 @@ class DataLoader:
                     random_idx = np.arange(self.data_size)
                     np.random.shuffle(random_idx)
                     self.data = [item[random_idx] for item in self.data]
+
+            if self.sort_batch:
+                perm = torch.argsort(batch[self.sort_index], dim=0, descending=True)
+                batch = [item[perm] for item in batch]
+
             return batch
 
 
@@ -76,7 +85,7 @@ class Embedding(nn.Module):
         return self.weight[x]
 
 
-class HistoryCDM(torch.nn.Module):
+class HistoryCDM(nn.Module):
     def __init__(self, num_items, dim, beta):
         super().__init__()
 
@@ -130,6 +139,48 @@ class HistoryCDM(torch.nn.Module):
         return nn.functional.nll_loss(y_pred, y)
 
 
+class LSTM(nn.Module):
+
+    def __init__(self, num_items, dim):
+        super().__init__()
+
+        self.num_items = num_items
+        self.dim = dim
+
+        self.item_embedding = Embedding(
+            num=self.num_items + 1,
+            dim=self.dim,
+            pad_idx=self.num_items
+        )
+
+        self.lstm = nn.LSTM(dim, dim, batch_first=True)
+
+    def forward(self, histories, history_lengths, choice_sets, choice_set_lengths):
+        batch_size, max_choice_set_len = choice_sets.size()
+        _, max_history_len = histories.size()
+
+        history_vecs = self.item_embedding(histories)
+        packed_histories = pack_padded_sequence(history_vecs, history_lengths, batch_first=True)
+        packed_output, (h_n, c_n) = self.lstm(packed_histories)
+
+        choice_set_vecs = self.item_embedding(choice_sets)
+
+        utilities = (choice_set_vecs * h_n[-1][:, None, :]).sum(2)
+        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
+
+        return nn.functional.log_softmax(utilities, 1)
+
+    def loss(self, y_pred, y):
+        """
+        The error in inferred log-probabilities given observations
+        :param y_pred: log(choice probabilities)
+        :param y: observed choices
+        :return: the loss
+        """
+
+        return nn.functional.nll_loss(y_pred, y)
+
+
 def toy_example():
     n = 4
     histories = torch.tensor(
@@ -155,7 +206,9 @@ def toy_example():
     # Indices into choice_sets
     choices = torch.tensor([0, 0, 0, 1, 2])
 
-    train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
+    model, losses = train_lstm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=3, lr=0.01)
+    plt.plot(range(500), losses)
+    plt.show()
 
 
 def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4):
@@ -163,6 +216,40 @@ def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_len
     model = HistoryCDM(n, dim, beta)
     data_loader = DataLoader((histories, history_lengths, choice_sets, choice_set_lengths, choices),
                              batch_size=128, shuffle=True)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, amsgrad=True, weight_decay=weight_decay)
+
+    losses = []
+    for epoch in tqdm(range(500)):
+        total_loss = 0
+        count = 0
+        for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
+            model.train()
+            choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
+            loss = model.loss(choice_pred, choices)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            model.eval()
+            total_loss += loss.item()
+            count += 1
+
+        total_loss /= count
+        losses.append(total_loss)
+
+    return model, losses
+
+
+def train_lstm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, lr=1e-4, weight_decay=1e-4):
+    # Reverse histories
+    for i in range(histories.size(0)):
+        histories[i, :history_lengths[i]] = histories[i, :history_lengths[i]].flip(0)
+
+    model = LSTM(n, dim)
+
+    data_loader = DataLoader((histories, history_lengths, choice_sets, choice_set_lengths, choices),
+                             batch_size=128, shuffle=True, sort_batch=True, sort_index=1)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, amsgrad=True, weight_decay=weight_decay)
 
@@ -292,7 +379,7 @@ def load_wikispeedia():
 
 def grid_search_wikispeedia():
     dims = [16, 64, 128]
-    lrs = [0.1, 0.005, 0.0001]
+    lrs = [0.005, 0.1, 0.0001]
     wds = [0, 0.0001, 0.1]
 
     graph, train_data, val_data, test_data = load_wikispeedia()
@@ -308,25 +395,40 @@ def grid_search_wikispeedia():
                     pickle.dump(losses, f)
 
 
-def test_wikispeedia():
-    graph, train_data, val_data, test_data = load_wikispeedia()
+def grid_search_wikispeedia_lstm():
+    dims = [16, 64, 128]
+    lrs = [0.005, 0.1, 0.0001]
+    wds = [0, 0.0001, 0.1]
 
-    print('Train data size:', len(train_data[0]))
-    print('Val data size:', len(val_data[0]))
-    print('Test data size:', len(test_data[0]))
+    graph, train_data, val_data, test_data = load_wikispeedia()
+    n = len(graph.nodes)
+
+    for dim in dims:
+        for lr in lrs:
+            for wd in wds:
+                print(f'Training LSTM dim {dim}, lr {lr}, wd {wd}...')
+                model, losses = train_lstm(n, *train_data, dim=dim, lr=lr, weight_decay=wd)
+                torch.save(model.state_dict(), f'wikispeedia_lstm_params_{dim}_{lr}_{wd}.pt')
+                with open(f'wikispeedia_lstm_losses_{dim}_{lr}_{wd}.pickle', 'wb') as f:
+                    pickle.dump(losses, f)
+
+
+def test_wikispeedia(param_fname, loaded_data=None):
+    if loaded_data is None:
+        graph, train_data, val_data, test_data = load_wikispeedia()
+    else:
+        graph, train_data, val_data, test_data = loaded_data
 
     n = len(graph.nodes)
 
     model = HistoryCDM(n, 16, 0.5)
-    model.load_state_dict(torch.load('wikispeedia_params_16_0.1_0.pt'))
+    model.load_state_dict(torch.load(param_fname))
     model.eval()
-
-    print(len(graph.edges))
 
     data_loader = DataLoader(val_data, batch_size=128, shuffle=True)
 
     count = 0
-    total = 0
+    correct = 0
     mean_rank = 0
     mrr = 0
     total_loss = 0
@@ -339,11 +441,9 @@ def test_wikispeedia():
         mean_rank += ranks.sum().item() / 128
         mrr += (1 / ranks.float()).sum().item() / 128
         count += 1
-        total += (idxs == choices).long().sum().item() / 128
+        correct += (idxs == choices).long().sum().item() / 128
 
-    print(f'Accuracy: {total / count}')
-    print(f'Mean rank: {mean_rank / count}')
-    print(f'Mean reciprocal rank: {mrr / count}')
+    return correct / count, mean_rank / count, mrr / count
 
 
 def baseline_wikispeedia():
@@ -368,7 +468,7 @@ def baseline_wikispeedia():
     traffic_out = transitions.sum(axis=1)
     params = choix.choicerank(graph, traffic_in, traffic_out)
 
-    histories, history_lengths, choice_sets, choice_set_lengths, choices = test_data
+    histories, history_lengths, choice_sets, choice_set_lengths, choices = val_data
 
     correct = 0
     total = 0
@@ -421,11 +521,45 @@ def baseline_wikispeedia():
     print(f'Mean reciprocal rank: {mrr / total}')
 
 
-def plot_loss(fname):
-    with open(fname, 'rb') as f:
-        losses = pickle.load(f)
+def plot_loss(fname, axes, row, col):
+    lrs = ['0.1', '0.005', '0.0001']
+    wds = ['0.1', '0.0001', '0']
 
-    plt.plot(range(len(losses)), losses)
+    loaded_data = load_wikispeedia()
+
+    fig, axes = plt.subplots(3, 3, sharex='col')
+
+    for fname in glob.glob('wikispeedia_losses_16*'):
+        fname_split = fname.split('_')
+        lr = fname_split[3]
+        wd = fname_split[4].replace('.pickle', '')
+
+        row = lrs.index(lr)
+        col = wds.index(wd)
+
+        print(lr, wd, row, col)
+
+        print(fname)
+        param_fname = fname.replace('.pickle', '.pt').replace('losses', 'params')
+        acc, mean_rank, mrr = test_wikispeedia(param_fname, loaded_data)
+        plot_loss(fname, axes, row, col)
+
+        if row == 0:
+            axes[row, col].annotate(f'WD: {wd}', xy=(0.5, 1), xytext=(0, 5),
+                                    xycoords='axes fraction', textcoords='offset points',
+                                    fontsize=14, ha='center', va='baseline')
+
+        if col == 2:
+            axes[row, col].annotate(f'LR: {lr}', xy=(1, 0.5), xytext=(-axes[row, col].yaxis.labelpad + 20, 0),
+                                    xycoords='axes fraction', textcoords='offset points',
+                                    fontsize=14, ha='right', va='center', rotation=270)
+
+        axes[row, col].annotate(f'Val. acc: {acc:.2f}',
+                                xy=(0.9, 0.8), xycoords='axes fraction', fontsize=10,
+                                ha='right')
+
+    plt.tight_layout()
+    plt.savefig('grid_search_16_dim.pdf', bbox_inches='tight')
     plt.show()
 
 
@@ -437,4 +571,5 @@ if __name__ == '__main__':
     # test_wikispeedia()
     # grid_search_wikispeedia()
     # baseline_wikispeedia()
-    plot_loss('wikispeedia_losses_16_0.1_0.pickle')
+
+    grid_search_wikispeedia_lstm()
