@@ -7,7 +7,7 @@ from torch import nn
 import numpy as np
 import networkx as nx
 import pandas as pd
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import collections
 from tqdm import tqdm
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
