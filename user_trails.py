@@ -7,7 +7,7 @@ from torch import nn
 import numpy as np
 import networkx as nx
 import pandas as pd
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import collections
 from tqdm import tqdm
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
@@ -446,6 +446,39 @@ def test_wikispeedia(param_fname, loaded_data=None):
     return correct / count, mean_rank / count, mrr / count
 
 
+def test_lstm_wikispeedia(param_fname, loaded_data=None):
+    if loaded_data is None:
+        graph, train_data, val_data, test_data = load_wikispeedia()
+    else:
+        graph, train_data, val_data, test_data = loaded_data
+
+    n = len(graph.nodes)
+
+    model = LSTM(n, 16)
+    model.load_state_dict(torch.load(param_fname))
+    model.eval()
+
+    data_loader = DataLoader(val_data, batch_size=128, shuffle=True, sort_batch=True, sort_index=1)
+
+    count = 0
+    correct = 0
+    mean_rank = 0
+    mrr = 0
+    total_loss = 0
+    for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
+        choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
+
+        ranks = (torch.argsort(choice_pred, dim=1, descending=True) == choices[:, None]).nonzero()[:, 1] + 1
+
+        vals, idxs = choice_pred.max(1)
+        mean_rank += ranks.sum().item() / 128
+        mrr += (1 / ranks.float()).sum().item() / 128
+        count += 1
+        correct += (idxs == choices).long().sum().item() / 128
+
+    return correct / count, mean_rank / count, mrr / count
+
+
 def baseline_wikispeedia():
     graph, train_data, val_data, test_data = load_wikispeedia()
 
@@ -572,4 +605,11 @@ if __name__ == '__main__':
     # grid_search_wikispeedia()
     # baseline_wikispeedia()
 
-    grid_search_wikispeedia_lstm()
+    # grid_search_wikispeedia_lstm()
+    # print(test_lstm_wikispeedia('wikispeedia_lstm_params_16_0.005_0.pt'))
+    #
+    # with open('wikispeedia_lstm_losses_16_0.005_0.pickle', 'rb') as f:
+    #     data = pickle.load(f)
+    #
+    # plt.plot(range(500), data)
+    # plt.show()
