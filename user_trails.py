@@ -379,8 +379,8 @@ def load_wikispeedia():
 
 def grid_search_wikispeedia():
     dims = [16, 64, 128]
-    lrs = [0.005, 0.1, 0.0001]
-    wds = [0, 0.0001, 0.1]
+    lrs = [0.005, 0.01, 0.001]
+    wds = [0, 0.000001, 0.0001]
 
     graph, train_data, val_data, test_data = load_wikispeedia()
     n = len(graph.nodes)
@@ -446,7 +446,7 @@ def test_wikispeedia(param_fname, loaded_data=None):
     return correct / count, mean_rank / count, mrr / count
 
 
-def test_lstm_wikispeedia(param_fname, loaded_data=None):
+def test_lstm_wikispeedia(param_fname, dim, loaded_data=None):
     if loaded_data is None:
         graph, train_data, val_data, test_data = load_wikispeedia()
     else:
@@ -454,7 +454,7 @@ def test_lstm_wikispeedia(param_fname, loaded_data=None):
 
     n = len(graph.nodes)
 
-    model = LSTM(n, 16)
+    model = LSTM(n, dim)
     model.load_state_dict(torch.load(param_fname))
     model.eval()
 
@@ -555,17 +555,36 @@ def baseline_wikispeedia():
 
 
 def plot_loss(fname, axes, row, col):
+    with open(fname, 'rb') as f:
+        losses = pickle.load(f)
+
+    axes[row, col].plot(range(500), losses)
+
+    if col == 0:
+        axes[row, col].set_ylabel('Training losss')
+
+    if row == 2:
+        axes[row, col].set_xlabel('Epoch')
+
+
+def plot_all_lstm_losses():
+    loaded_data = load_wikispeedia()
+
+    for dim in [16, 64, 128]:
+        plot_all_losses(loaded_data, dim, test_lstm_wikispeedia, f'results/wikispeedia_lstm_losses_{dim}*.pickle',
+                        f'lstm_wikispeedia_{dim}.pdf')
+
+
+def plot_all_losses(loaded_data, dim, test_method, loss_file_glob, outfile):
     lrs = ['0.1', '0.005', '0.0001']
     wds = ['0.1', '0.0001', '0']
 
-    loaded_data = load_wikispeedia()
-
     fig, axes = plt.subplots(3, 3, sharex='col')
 
-    for fname in glob.glob('wikispeedia_losses_16*'):
+    for fname in glob.glob(loss_file_glob):
         fname_split = fname.split('_')
-        lr = fname_split[3]
-        wd = fname_split[4].replace('.pickle', '')
+        lr = fname_split[4]
+        wd = fname_split[5].replace('.pickle', '')
 
         row = lrs.index(lr)
         col = wds.index(wd)
@@ -573,8 +592,8 @@ def plot_loss(fname, axes, row, col):
         print(lr, wd, row, col)
 
         print(fname)
-        param_fname = fname.replace('.pickle', '.pt').replace('losses', 'params')
-        acc, mean_rank, mrr = test_wikispeedia(param_fname, loaded_data)
+        param_fname = fname.replace('.pickle', '.pt').replace('losses', 'params').replace('results/', 'params/')
+        acc, mean_rank, mrr = test_method(param_fname, dim, loaded_data)
         plot_loss(fname, axes, row, col)
 
         if row == 0:
@@ -592,7 +611,7 @@ def plot_loss(fname, axes, row, col):
                                 ha='right')
 
     plt.tight_layout()
-    plt.savefig('grid_search_16_dim.pdf', bbox_inches='tight')
+    plt.savefig(outfile, bbox_inches='tight')
     plt.show()
 
 
@@ -602,7 +621,7 @@ if __name__ == '__main__':
     # model, losses = train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices)
     # torch.save(model.state_dict(), 'wikispeedia_params.pt')
     # test_wikispeedia()
-    # grid_search_wikispeedia()
+    grid_search_wikispeedia()
     # baseline_wikispeedia()
 
     # grid_search_wikispeedia_lstm()
@@ -611,5 +630,16 @@ if __name__ == '__main__':
     # with open('wikispeedia_lstm_losses_16_0.005_0.pickle', 'rb') as f:
     #     data = pickle.load(f)
     #
-    # plt.plot(range(500), data)
+    # plt.plot(range(2, 500), data[2:], label='LSTM')
+    #
+    # with open('wikispeedia_losses_16_0.005_0.pickle', 'rb') as f:
+    #     data = pickle.load(f)
+    #
+    # plt.plot(range(2, 500), data[2:], label='CDM + history')
+    # plt.legend()
+    #
+    # plt.xlabel('Epoch')
+    # plt.ylabel('Training loss')
     # plt.show()
+
+    # plot_all_lstm_losses()
