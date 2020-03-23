@@ -3,10 +3,9 @@ import os
 import pickle
 
 import choix
+import networkx as nx
 import numpy as np
 import torch
-
-import networkx as nx
 
 from models import train_history_cdm, train_lstm, HistoryCDM, DataLoader, LSTM
 
@@ -113,7 +112,6 @@ def load_wikispeedia():
     return graph, train_data, val_data, test_data
 
 
-
 def grid_search_wikispeedia():
     dims = [16, 64, 128]
     lrs = [0.005, 0.01, 0.001]
@@ -130,6 +128,24 @@ def grid_search_wikispeedia():
                 torch.save(model.state_dict(), f'wikispeedia_params_{dim}_{lr}_{wd}.pt')
                 with open(f'wikispeedia_losses_{dim}_{lr}_{wd}.pickle', 'wb') as f:
                     pickle.dump(losses, f)
+
+
+def beta_grid_search_wikispeedia():
+    dims = [16, 64, 128]
+    lr = 0.005
+    wd = 0
+    betas = [0, 0.5, 1]
+
+    graph, train_data, val_data, test_data = load_wikispeedia()
+    n = len(graph.nodes)
+
+    for dim in dims:
+        for beta in betas:
+            print(f'Training dim {dim}, beta {beta}...')
+            model, losses = train_history_cdm(n, *train_data, dim=dim, lr=lr, weight_decay=wd)
+            torch.save(model.state_dict(), f'wikispeedia_beta_{beta}_params_{dim}_{lr}_{wd}.pt')
+            with open(f'wikispeedia_beta_{beta}_losses_{dim}_{lr}_{wd}.pickle', 'wb') as f:
+                pickle.dump(losses, f)
 
 
 def grid_search_wikispeedia_lstm():
@@ -291,6 +307,5 @@ def baseline_wikispeedia():
     print(f'Mean reciprocal rank: {mrr / total}')
 
 
-
 if __name__ == '__main__':
-    grid_search_wikispeedia()
+    beta_grid_search_wikispeedia()

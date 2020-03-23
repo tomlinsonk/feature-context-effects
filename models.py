@@ -1,18 +1,9 @@
-import glob
-import os
-import pickle
-
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from torch import nn
-import numpy as np
-import networkx as nx
-import pandas as pd
-import matplotlib.pyplot as plt
-import collections
+from torch.nn.utils.rnn import pack_padded_sequence
 from tqdm import tqdm
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-
-import choix
 
 
 class DataLoader:
@@ -86,12 +77,12 @@ class Embedding(nn.Module):
 
 
 class HistoryCDM(nn.Module):
-    def __init__(self, num_items, dim, beta):
+    def __init__(self, num_items, dim, beta=0.5, learn_beta=False):
         super().__init__()
 
         self.num_items = num_items
         self.dim = dim
-        self.beta = beta
+        self.beta = nn.Parameter(torch.tensor([beta]), requires_grad=learn_beta)
 
         self.history_embedding = Embedding(
             num=self.num_items + 1,
@@ -120,7 +111,7 @@ class HistoryCDM(nn.Module):
         target_vecs = self.target_embedding(choice_sets)
 
         context_sums = context_vecs.sum(1, keepdim=True) - context_vecs
-        history_weight = torch.pow(torch.full([max_history_len], self.beta), torch.arange(0, max_history_len))[:, None]
+        history_weight = torch.pow(self.beta.repeat(max_history_len), torch.arange(0, max_history_len))[:, None]
         weighted_history_sums = (history_weight * history_vecs).sum(1, keepdim=True)
 
         utilities = (target_vecs * (context_sums + weighted_history_sums)).sum(2)
@@ -206,14 +197,16 @@ def toy_example():
     # Indices into choice_sets
     choices = torch.tensor([0, 0, 0, 1, 2])
 
-    model, losses = train_lstm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=3, lr=0.01)
+    model, losses = train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=3, lr=0.005, weight_decay=0)
     plt.plot(range(500), losses)
     plt.show()
 
+    print(model.beta)
 
-def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4):
 
-    model = HistoryCDM(n, dim, beta)
+def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
+
+    model = HistoryCDM(n, dim, beta, learn_beta)
     data_loader = DataLoader((histories, history_lengths, choice_sets, choice_set_lengths, choices),
                              batch_size=128, shuffle=True)
 
@@ -226,10 +219,15 @@ def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_len
         for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
             model.train()
             choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
+
             loss = model.loss(choice_pred, choices)
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
+            with torch.no_grad():
+                model.beta.data = model.beta.clamp(0, 1)
 
             model.eval()
             total_loss += loss.item()
