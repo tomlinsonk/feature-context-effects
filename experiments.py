@@ -142,7 +142,7 @@ def beta_grid_search_wikispeedia():
     for dim in dims:
         for beta in betas:
             print(f'Training dim {dim}, beta {beta}...')
-            model, losses = train_history_cdm(n, *train_data, dim=dim, lr=lr, weight_decay=wd)
+            model, losses = train_history_cdm(n, *train_data, dim=dim, lr=lr, weight_decay=wd, learn_beta=False, beta=beta)
             torch.save(model.state_dict(), f'wikispeedia_beta_{beta}_params_{dim}_{lr}_{wd}.pt')
             with open(f'wikispeedia_beta_{beta}_losses_{dim}_{lr}_{wd}.pickle', 'wb') as f:
                 pickle.dump(losses, f)
