@@ -6,6 +6,7 @@ import choix
 import networkx as nx
 import numpy as np
 import torch
+import pandas as pd
 
 from models import train_history_cdm, train_lstm, HistoryCDM, DataLoader, LSTM
 
