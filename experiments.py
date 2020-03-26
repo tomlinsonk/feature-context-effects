@@ -325,4 +325,4 @@ def baseline_wikispeedia():
 
 
 if __name__ == '__main__':
-    beta_grid_search_wikispeedia()
+    learn_beta_wikispeedia()
