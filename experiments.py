@@ -149,6 +149,22 @@ def beta_grid_search_wikispeedia():
                 pickle.dump(losses, f)
 
 
+def learn_beta_wikispeedia():
+    dims = [16, 64, 128]
+    lr = 0.005
+    wd = 0
+
+    graph, train_data, val_data, test_data = load_wikispeedia()
+    n = len(graph.nodes)
+
+    for dim in dims:
+        print(f'Training dim {dim}, learning beta...')
+        model, losses = train_history_cdm(n, *train_data, dim=dim, lr=lr, weight_decay=wd, learn_beta=True)
+        torch.save(model.state_dict(), f'wikispeedia_learn_beta_params_{dim}_{lr}_{wd}.pt')
+        with open(f'wikispeedia_learn_beta_losses_{dim}_{lr}_{wd}.pickle', 'wb') as f:
+            pickle.dump(losses, f)
+
+
 def grid_search_wikispeedia_lstm():
     dims = [16, 64, 128]
     lrs = [0.005, 0.1, 0.0001]
