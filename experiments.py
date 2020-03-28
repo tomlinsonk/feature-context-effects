@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import pandas as pd
 
-from models import train_history_cdm, train_lstm, HistoryCDM, DataLoader, LSTM
+from models import train_history_cdm, train_lstm, HistoryCDM, DataLoader, LSTM, train_history_mnl
 
 
 def remove_back(path):
@@ -149,8 +149,26 @@ def beta_grid_search_wikispeedia():
                 pickle.dump(losses, f)
 
 
-def learn_beta_wikispeedia():
+def mnl_beta_grid_search_wikispeedia():
     dims = [16, 64, 128]
+    lr = 0.005
+    wd = 0
+    betas = [0, 0.5, 1]
+
+    graph, train_data, val_data, test_data = load_wikispeedia()
+    n = len(graph.nodes)
+
+    for dim in dims:
+        for beta in betas:
+            print(f'Training history MNL dim {dim}, beta {beta}...')
+            model, losses = train_history_mnl(n, *train_data, dim=dim, lr=lr, weight_decay=wd, learn_beta=False, beta=beta)
+            torch.save(model.state_dict(), f'wikispeedia_mnl_beta_{beta}_params_{dim}_{lr}_{wd}.pt')
+            with open(f'wikispeedia_mnl_beta_{beta}_losses_{dim}_{lr}_{wd}.pickle', 'wb') as f:
+                pickle.dump(losses, f)
+
+
+def learn_beta_wikispeedia():
+    dims = [128, 16, 64]
     lr = 0.005
     wd = 0
 
@@ -325,4 +343,4 @@ def baseline_wikispeedia():
 
 
 if __name__ == '__main__':
-    learn_beta_wikispeedia()
+    mnl_beta_grid_search_wikispeedia()

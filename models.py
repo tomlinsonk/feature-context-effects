@@ -130,6 +130,59 @@ class HistoryCDM(nn.Module):
         return nn.functional.nll_loss(y_pred, y)
 
 
+class HistoryMNL(nn.Module):
+    def __init__(self, num_items, dim, beta=0.5, learn_beta=False):
+        super().__init__()
+
+        self.num_items = num_items
+        self.dim = dim
+        self.beta = nn.Parameter(torch.tensor([beta]), requires_grad=learn_beta)
+
+        self.history_embedding = Embedding(
+            num=self.num_items + 1,
+            dim=self.dim,
+            pad_idx=self.num_items
+        )
+
+        self.target_embedding = Embedding(
+            num=self.num_items + 1,
+            dim=self.dim,
+            pad_idx=self.num_items
+        )
+
+        self.page_utilities = Embedding(
+            num=self.num_items + 1,
+            dim=1,
+            pad_idx=self.num_items
+        )
+
+    def forward(self, histories, history_lengths, choice_sets, choice_set_lengths):
+        batch_size, max_choice_set_len = choice_sets.size()
+        _, max_history_len = histories.size()
+
+        history_vecs = self.history_embedding(histories)
+        page_utilities = self.page_utilities(choice_sets)
+        target_vecs = self.target_embedding(choice_sets)
+
+        history_weight = torch.pow(self.beta.repeat(max_history_len), torch.arange(0, max_history_len))[:, None]
+        weighted_history_sums = (history_weight * history_vecs).sum(1, keepdim=True)
+
+        utilities = (target_vecs * weighted_history_sums).sum(2) + page_utilities.squeeze()
+        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
+
+        return nn.functional.log_softmax(utilities, 1)
+
+    def loss(self, y_pred, y):
+        """
+        The error in inferred log-probabilities given observations
+        :param y_pred: log(choice probabilities)
+        :param y: observed choices
+        :return: the loss
+        """
+
+        return nn.functional.nll_loss(y_pred, y)
+
+
 class LSTM(nn.Module):
 
     def __init__(self, num_items, dim):
@@ -197,16 +250,14 @@ def toy_example():
     # Indices into choice_sets
     choices = torch.tensor([0, 0, 0, 1, 2])
 
-    model, losses = train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=3, lr=0.005, weight_decay=0)
+    model, losses = train_history_mnl(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=3, lr=0.005, weight_decay=0)
     plt.plot(range(500), losses)
     plt.show()
 
     print(model.beta)
 
 
-def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
-
-    model = HistoryCDM(n, dim, beta, learn_beta)
+def train_history_model(model, histories, history_lengths, choice_sets, choice_set_lengths, choices, lr=1e-4, weight_decay=1e-4):
     data_loader = DataLoader((histories, history_lengths, choice_sets, choice_set_lengths, choices),
                              batch_size=128, shuffle=True)
 
@@ -237,6 +288,17 @@ def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_len
         losses.append(total_loss)
 
     return model, losses
+
+
+def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
+
+    model = HistoryCDM(n, dim, beta, learn_beta)
+    return train_history_model(model, histories, history_lengths, choice_sets, choice_set_lengths, choices, lr, weight_decay)
+
+
+def train_history_mnl(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
+    model = HistoryMNL(n, dim, beta, learn_beta)
+    return train_history_model(model, histories, history_lengths, choice_sets, choice_set_lengths, choices, lr, weight_decay)
 
 
 def train_lstm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, lr=1e-4, weight_decay=1e-4):

@@ -7,6 +7,7 @@ import torch
 
 import os
 import matplotlib.pyplot as plt
+import seaborn as sns
 from tqdm import tqdm
 from sklearn.manifold import TSNE
 
@@ -19,13 +20,16 @@ def plot_loss(fname, axes, row, col):
     with open(fname, 'rb') as f:
         losses = pickle.load(f)
 
-    axes[row, col].plot(range(500), losses)
+    ax = axes[col] if row is None else axes[row, col]
+
+    if row is None:
+        ax.plot(range(500), losses)
 
     if col == 0:
-        axes[row, col].set_ylabel('Training losss')
+        ax.set_ylabel('Training losss')
 
     if row == 2:
-        axes[row, col].set_xlabel('Epoch')
+        ax.set_xlabel('Epoch')
 
 
 def plot_all_lstm_losses():
@@ -121,6 +125,37 @@ def plot_beta_losses(outfile):
     plt.show()
 
 
+def plot_learn_beta_losses(outfile):
+    loaded_data = load_wikispeedia()
+    dims = ['16', '64', '128']
+
+    glob_template = '{}/wikispeedia_learn_beta_{}_{}_0.005_0.{}'
+
+    fig, axes = plt.subplots(1, 3, sharex='col', figsize=(6, 2.5))
+
+    for col, dim in enumerate(dims):
+        param_fname = glob_template.format('params', 'params', dim, 'pt')
+        acc, mean_rank, mrr = test_wikispeedia(param_fname, int(dim), loaded_data)
+        plot_loss(glob_template.format('results', 'losses', dim, 'pickle'), axes, None, col)
+
+        axes[col].annotate(f'Dim: {dim}', xy=(0.5, 1), xytext=(0, 5),
+                                xycoords='axes fraction', textcoords='offset points',
+                                fontsize=14, ha='center', va='baseline')
+
+        model = HistoryCDM(len(loaded_data[0].nodes), int(dim), 0.5)
+        model.load_state_dict(torch.load(param_fname))
+
+        axes[col].annotate(f'Val. acc: {acc:.2f}\n$\\beta: {model.beta.item():.2f}$',
+                           xy=(0.9, 0.8), xycoords='axes fraction', fontsize=10,
+                           ha='right')
+
+
+
+    plt.tight_layout()
+    plt.savefig(outfile, bbox_inches='tight')
+    plt.show()
+
+
 def load_normalized_embeddings(param_fname, n, dim):
     model = HistoryCDM(n, dim, 0.5)
     model.load_state_dict(torch.load(param_fname), strict=False)
@@ -156,10 +191,8 @@ def analyze_embeddings(param_fname, dim):
     histories, history_lengths, choice_sets, choice_set_lengths, choices = train_data
     choice_indices = choice_sets[torch.arange(choice_sets.size(0)), choices]
 
-    # for i in range(3):
-        # for j in range(i, 3):
-    for i in [1]:
-        for j in [2]:
+    for i in range(3):
+        for j in range(i, 3):
             for extreme, dir in ((np.inf, 'smallest'), (-np.inf, 'largest')):
                 products = embeddings[i] @ embeddings[j].T
 
@@ -183,7 +216,7 @@ def analyze_embeddings(param_fname, dim):
                     results += f'{products[row, col]}, {index_map[row]}, {index_map[col]}\n'
 
                 result_fname = os.path.basename(param_fname).replace('.pt', '.txt').replace('params', f'embeds_{names[i]}_{names[j]}_{dir}')
-                with open(f'results/embedding_stats/{result_fname}', 'w') as f:
+                with open(f'{result_fname}', 'w') as f:
                     f.write(results)
 
 
@@ -297,6 +330,82 @@ def analyze_history_effects(param_fname, dim):
     # plt.show()
 
 
+def analyze_context_effects(param_fname, dim):
+    graph, train_data, val_data, test_data = load_wikispeedia()
+
+    data = [torch.cat([train_data[i], val_data[i], test_data[i]]).numpy() for i in range(len(train_data))]
+    histories, history_lengths, choice_sets, choice_set_lengths, choices = data
+    choice_indices = choice_sets[np.arange(len(choice_sets)), choices]
+
+    n = len(graph.nodes)
+
+    model = HistoryCDM(n, dim, 0.5)
+    model.load_state_dict(torch.load(param_fname), strict=False)
+    model.eval()
+
+    index_map = ['' for _ in range(n)]
+    for node in graph.nodes:
+        index_map[graph.nodes[node]['index']] = node
+
+    history_embedding, target_embedding, context_embedding = load_normalized_embeddings(param_fname, n, dim)
+
+    choice_counts = np.bincount(choice_indices)
+    in_choice_set_counts = np.bincount(choice_sets.flatten())
+    hit_rates = np.zeros_like(choice_counts, dtype=float)
+    for page in range(n):
+        in_choice_set = in_choice_set_counts[page]
+        chosen = choice_counts[page]
+
+        if chosen > 0:
+            hit_rates[page] = chosen / in_choice_set
+
+    top_20 = np.argsort(choice_counts)[-20:][::-1]
+    dot_prods = context_embedding[top_20] @ target_embedding[top_20].T
+    np.fill_diagonal(dot_prods, 0)
+
+    page_names = [index_map[idx].replace('_', ' ') for idx in top_20]
+    sns.heatmap(dot_prods, center=0, xticklabels=page_names, yticklabels=page_names, linewidths=.5, cmap='RdBu_r')
+    plt.xlabel('Target Embeddings')
+    plt.ylabel('Context Embeddings')
+    plt.savefig('top_20_context_effects.pdf', bbox_inches='tight')
+    plt.show()
+
+    hit_rate_diffs = np.zeros_like(dot_prods, dtype=float)
+
+    for i, context_page in tqdm(enumerate(top_20), total=20):
+        for j, target_page in enumerate(top_20):
+            if context_page == target_page: continue
+
+            in_set = (choice_sets == context_page).sum(1) > 0
+            conditional_in_choice_set = np.count_nonzero(choice_sets[in_set] == target_page)
+            conditional_chosen = np.count_nonzero(choice_indices[in_set] == target_page)
+
+            conditional_hit_rate = 0 if conditional_in_choice_set == 0 else conditional_chosen / conditional_in_choice_set
+
+            hit_rate_diffs[i, j] = conditional_hit_rate - hit_rates[target_page]
+
+    sns.heatmap(hit_rate_diffs, center=0, xticklabels=page_names, yticklabels=page_names, linewidths=.5, cmap='RdBu_r')
+    plt.xlabel('Target Page')
+    plt.ylabel('Context Page')
+    plt.savefig('top_20_context_hit_rates.pdf', bbox_inches='tight')
+    plt.show()
+
+    flat_dot_prods = dot_prods.flatten()
+    flat_hit_rate_diffs = hit_rate_diffs.flatten()
+
+    print('Correlation:', stats.pearsonr(flat_dot_prods, flat_hit_rate_diffs))
+
+    slope, intercept, r_value, p_value, std_err = stats.linregress(flat_dot_prods, flat_hit_rate_diffs)
+    plt.plot(np.linspace(-0.4, 0.7), slope * np.linspace(-0.4, 0.7) + intercept, c='#ffa600')
+    print(r_value, p_value, std_err)
+
+    plt.scatter(flat_dot_prods, flat_hit_rate_diffs)
+    plt.xlabel('Context effect score')
+    plt.ylabel('Conditional hit rate boost')
+    plt.savefig('context_score_correlation.pdf', bbox_inches='tight')
+    plt.show()
+
+
 def all_tsne(param_fname, dim):
     graph, train_data, val_data, test_data = load_wikispeedia()
     n = len(graph.nodes)
@@ -315,6 +424,9 @@ def tsne_embedding(embedding):
 
 if __name__ == '__main__':
     # plot_all_history_cdm_losses()
-    # analyze_history_effects('params/wikispeedia_params_128_0.005_0.pt', 128)
+    analyze_context_effects('params/wikispeedia_params_128_0.005_0.pt', 128)
     # all_tsne('params/wikispeedia_params_128_0.005_0.pt', 128)
-    plot_beta_losses('plots/wikispeedia_vary_beta.pdf')
+    # plot_beta_losses('plots/wikispeedia_vary_beta.pdf')
+    # analyze_embeddings('params/wikispeedia_beta_1_params_128_0.005_0.pt', 128)
+    # plot_learn_beta_losses('plots/wikispeedia_learn_beta.pdf')
+
