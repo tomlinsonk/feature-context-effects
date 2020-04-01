@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import pandas as pd
 
+from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset
 from models import train_history_cdm, train_lstm, HistoryCDM, DataLoader, LSTM, train_history_mnl
 
 
@@ -23,7 +24,6 @@ def remove_back(path):
 
 
 def load_wikispeedia():
-
     if os.path.isfile('data/wikispeedia_data.pickle'):
         print('Loading parsed Wikispeedia data from data/wikispeedia_data.pickle...')
         with open('data/wikispeedia_data.pickle', 'rb') as f:
@@ -201,7 +201,7 @@ def grid_search_wikispeedia_lstm():
                     pickle.dump(losses, f)
 
 
-def test_wikispeedia(param_fname, dim, loaded_data=None):
+def test_wikispeedia(param_fname, dim, loaded_data=None, Model=HistoryCDM):
     if loaded_data is None:
         graph, train_data, val_data, test_data = load_wikispeedia()
     else:
@@ -209,7 +209,7 @@ def test_wikispeedia(param_fname, dim, loaded_data=None):
 
     n = len(graph.nodes)
 
-    model = HistoryCDM(n, dim, 0.5)
+    model = Model(n, dim, 0.5)
     model.load_state_dict(torch.load(param_fname))
     model.eval()
 
@@ -267,50 +267,74 @@ def test_lstm_wikispeedia(param_fname, dim, loaded_data=None):
     return correct / count, mean_rank / count, mrr / count
 
 
-def baseline_wikispeedia():
-    graph, train_data, val_data, test_data = load_wikispeedia()
+def run_history_cdm(dataset, dim, lr, wd, beta, learn_beta):
+    graph, train_data, val_data, test_data = dataset.load()
+
+    print(f'Training History CDM on {dataset.name} (dim={dim}, lr={lr}, wd={wd}, beta={beta}, learn_beta={learn_beta})')
+    model, losses = train_history_cdm(len(graph.nodes), *train_data, dim=dim, lr=lr, weight_decay=wd, beta=beta, learn_beta=learn_beta)
+    torch.save(model.state_dict(), f'history_cdm_{dataset.name}_params_{dim}_{lr}_{wd}_{beta}_{learn_beta}.pt')
+    with open(f'history_cdm_{dataset.name}_losses_{dim}_{lr}_{wd}_{beta}_{learn_beta}.pickle', 'wb') as f:
+        pickle.dump(losses, f)
+
+
+def run_history_mnl(dataset, dim, lr, wd, beta, learn_beta):
+    graph, train_data, val_data, test_data = dataset.load()
+
+    print(f'Training History MNL on {dataset.name} (dim={dim}, lr={lr}, wd={wd}, beta={beta}, learn_beta={learn_beta})')
+    model, losses = train_history_mnl(len(graph.nodes), *train_data, dim=dim, lr=lr, weight_decay=wd, beta=beta, learn_beta=learn_beta)
+    torch.save(model.state_dict(), f'history_mnl_{dataset.name}_params_{dim}_{lr}_{wd}_{beta}_{learn_beta}.pt')
+    with open(f'history_mnl_{dataset.name}_losses_{dim}_{lr}_{wd}_{beta}_{learn_beta}.pickle', 'wb') as f:
+        pickle.dump(losses, f)
+
+
+def run_lstm(dataset, dim, lr, wd):
+    graph, train_data, val_data, test_data = dataset.load()
+
+    print(f'Training LSTM on {dataset.name} (dim={dim}, lr={lr}, wd={wd})')
+    model, losses = train_lstm(len(graph.nodes), *train_data, dim=dim, lr=lr, weight_decay=wd)
+    torch.save(model.state_dict(), f'lstm_{dataset.name}_params_{dim}_{lr}_{wd}.pt')
+    with open(f'lstm_{dataset.name}_losses_{dim}_{lr}_{wd}.pickle', 'wb') as f:
+        pickle.dump(losses, f)
+
+
+def compare_methods(dataset):
+    run_history_cdm(dataset, 64, 0.005, 0, 0.5, True)
+    run_history_mnl(dataset, 64, 0.005, 0, 0.5, True)
+    run_lstm(dataset, 64, 0.005, 0)
+
+
+def run_baselines(dataset):
+    graph, train_data, val_data, test_data = dataset.load()
 
     n = len(graph.nodes)
-    traffic_in = np.zeros(n)
-    traffic_out = np.zeros(n)
-
-    index_map = {graph.nodes[node]['index']: node for node in graph.nodes}
 
     histories, history_lengths, choice_sets, choice_set_lengths, choices = train_data
     transitions = np.zeros((n, n))
     for i in range(len(histories)):
-        # print(f'History:{[index_map[node.item()] for node in histories[i, :history_lengths[i].item()]]}')
-        #
-        # print(f'EDGE:{index_map[histories[i][0].item()]};{index_map[choice_sets[i][choices[i]].item()]}')
-
         transitions[histories[i][0], choice_sets[i][choices[i]]] += 1
 
     traffic_in = transitions.sum(axis=0)
     traffic_out = transitions.sum(axis=1)
-    params = choix.choicerank(graph, traffic_in, traffic_out)
 
     histories, history_lengths, choice_sets, choice_set_lengths, choices = val_data
 
-    correct = 0
-    total = 0
-    mrr = 0
-    mean_rank = 0
-    for i in range(len(histories)):
-        choice_set = choice_sets[i, :choice_set_lengths[i]]
-        probs = choix.probabilities(choice_set, params)
-        total += 1
+    try:
+        params = choix.choicerank(graph, traffic_in, traffic_out)
 
-        if np.argmax(probs) == choices[i].item():
-            correct += 1
+        correct = 0
+        total = 0
+        for i in range(len(histories)):
+            choice_set = choice_sets[i, :choice_set_lengths[i]]
+            probs = choix.probabilities(choice_set, params)
+            total += 1
 
-        rank = (torch.argsort(torch.tensor(probs), descending=True) == choices[i]).nonzero() + 1
-        mrr += 1 / rank.item()
-        mean_rank += rank.item()
+            if np.argmax(probs) == choices[i].item():
+                correct += 1
 
-    print('ChoiceRank')
-    print(f'Accuracy: {correct / total}')
-    print(f'Mean rank: {mean_rank / total}')
-    print(f'Mean reciprocal rank: {mrr / total}')
+        print('ChoiceRank')
+        print(f'\tAccuracy: {correct / total}')
+    except RuntimeError:
+        print('ChoiceRank crashed')
 
     correct = 0
     total = 0
@@ -321,26 +345,23 @@ def baseline_wikispeedia():
         if pred == choices[i].item():
             correct += 1
 
-    print('Random baseline:')
-    print(f'Accuracy: {correct / total}')
+    print('Random')
+    print(f'\tAccuracy: {correct / total}')
+
+    correct = 0
+    total = 0
+    most_frequent = np.argmax(transitions, axis=1)
 
     for i in range(len(histories)):
-        choice_set = choice_sets[i, :choice_set_lengths[i]]
-        transition_counts = [transitions[histories[i][0], node] for node in choice_set]
         total += 1
 
-        if np.argmax(transition_counts) == choices[i].item():
+        if most_frequent[histories[i][0]] == choice_sets[i][choices[i].item()]:
             correct += 1
 
-        rank = (torch.argsort(torch.tensor(transition_counts), descending=True) == choices[i]).nonzero() + 1
-        mrr += 1 / rank.item()
-        mean_rank += rank.item()
-
-    print('Pick-most-frequent baseline')
-    print(f'Accuracy: {correct / total}')
-    print(f'Mean rank: {mean_rank / total}')
-    print(f'Mean reciprocal rank: {mrr / total}')
+    print('Pick-most-frequent')
+    print(f'\tAccuracy: {correct / total}')
 
 
 if __name__ == '__main__':
-    mnl_beta_grid_search_wikispeedia()
+    for dataset in (KosarakDataset, YoochooseDataset, WikispeediaDataset):
+        compare_methods(dataset)

@@ -13,7 +13,7 @@ from sklearn.manifold import TSNE
 
 
 from experiments import load_wikispeedia, test_lstm_wikispeedia, test_wikispeedia
-from models import HistoryCDM
+from models import HistoryCDM, HistoryMNL
 
 
 def plot_loss(fname, axes, row, col):
@@ -22,8 +22,7 @@ def plot_loss(fname, axes, row, col):
 
     ax = axes[col] if row is None else axes[row, col]
 
-    if row is None:
-        ax.plot(range(500), losses)
+    ax.plot(range(500), losses)
 
     if col == 0:
         ax.set_ylabel('Training losss')
@@ -97,14 +96,14 @@ def plot_beta_losses(outfile):
     betas = ['0', '0.5', '1']
     dims = ['16', '64', '128']
 
-    glob_template = '{}/wikispeedia_beta_{}_{}_{}_0.005_0.{}'
+    glob_template = '{}/wikispeedia_mnl_beta_{}_{}_{}_0.005_0.{}'
 
     fig, axes = plt.subplots(3, 3, sharex='col')
 
     for row, beta in enumerate(betas):
         for col, dim in enumerate(dims):
             print(row, col)
-            acc, mean_rank, mrr = test_wikispeedia(glob_template.format('params', beta, 'params', dim, 'pt'), int(dim), loaded_data)
+            acc, mean_rank, mrr = test_wikispeedia(glob_template.format('params', beta, 'params', dim, 'pt'), int(dim), loaded_data, Model=HistoryMNL)
             plot_loss(glob_template.format('results', beta, 'losses', dim, 'pickle'), axes, row, col)
 
             if row == 0:
@@ -424,9 +423,9 @@ def tsne_embedding(embedding):
 
 if __name__ == '__main__':
     # plot_all_history_cdm_losses()
-    analyze_context_effects('params/wikispeedia_params_128_0.005_0.pt', 128)
+    # analyze_context_effects('params/wikispeedia_params_128_0.005_0.pt', 128)
     # all_tsne('params/wikispeedia_params_128_0.005_0.pt', 128)
-    # plot_beta_losses('plots/wikispeedia_vary_beta.pdf')
+    plot_beta_losses('plots/wikispeedia_mnl_vary_beta.pdf')
     # analyze_embeddings('params/wikispeedia_beta_1_params_128_0.005_0.pt', 128)
     # plot_learn_beta_losses('plots/wikispeedia_learn_beta.pdf')
 
