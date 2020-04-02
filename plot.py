@@ -28,7 +28,7 @@ def test_model(model, dataset, loaded_data=None):
 
     n = len(graph.nodes)
 
-    data_loader = DataLoader(val_data, batch_size=128, shuffle=True)
+    data_loader = DataLoader(val_data, batch_size=128, shuffle=True, sort_batch=True, sort_index=1)
 
     count = 0
     correct = 0
