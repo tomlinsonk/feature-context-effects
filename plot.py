@@ -1,3 +1,4 @@
+import os
 import pickle
 
 import matplotlib.pyplot as plt
@@ -73,14 +74,6 @@ def plot_compare_all():
             beta_string = '' if method is LSTM else '_0.5_True'
             param_fname = f'params/{method.name}_{dataset.name}_params_64_0.005_0{beta_string}.pt'
             loss_fname = f'results/{method.name}_{dataset.name}_losses_64_0.005_0{beta_string}.pickle'
-            model = load_model(LSTM, n, 64, param_fname)
-
-            acc, mean_rank, mrr = test_model(model, dataset, loaded_data=loaded_data)
-
-            with open(loss_fname, 'rb') as f:
-                losses = pickle.load(f)
-
-            axes[row, col].plot(range(500), losses)
 
             if row == 0:
                 axes[row, col].annotate(f'{method.name}', xy=(0.5, 1), xytext=(0, 5),
@@ -91,6 +84,18 @@ def plot_compare_all():
                 axes[row, col].annotate(f'{dataset.name}', xy=(1, 0.5), xytext=(-axes[row, col].yaxis.labelpad + 20, 0),
                                         xycoords='axes fraction', textcoords='offset points',
                                         fontsize=14, ha='right', va='center', rotation=270)
+
+            if not os.path.isfile(param_fname):
+                continue
+
+            model = load_model(LSTM, n, 64, param_fname)
+
+            acc, mean_rank, mrr = test_model(model, dataset, loaded_data=loaded_data)
+
+            with open(loss_fname, 'rb') as f:
+                losses = pickle.load(f)
+
+            axes[row, col].plot(range(500), losses)
 
             axes[row, col].annotate(f'Val. acc: {acc:.2f}',
                                     xy=(0.9, 0.8), xycoords='axes fraction', fontsize=10,
