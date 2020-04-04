@@ -86,6 +86,7 @@ class HistoryCDM(nn.Module):
         self.num_items = num_items
         self.dim = dim
         self.beta = nn.Parameter(torch.tensor([beta]), requires_grad=learn_beta)
+        self.learn_beta = learn_beta
 
         self.history_embedding = Embedding(
             num=self.num_items + 1,
@@ -143,6 +144,7 @@ class HistoryMNL(nn.Module):
         self.num_items = num_items
         self.dim = dim
         self.beta = nn.Parameter(torch.tensor([beta]), requires_grad=learn_beta)
+        self.learn_beta = learn_beta
 
         self.history_embedding = Embedding(
             num=self.num_items + 1,
