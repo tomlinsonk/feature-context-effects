@@ -258,24 +258,35 @@ def toy_example():
     # Indices into choice_sets
     choices = torch.tensor([0, 0, 0, 1, 2])
 
-    model, losses = train_history_mnl(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=3, lr=0.005, weight_decay=0)
-    plt.plot(range(500), losses)
+    train_data = histories, history_lengths, choice_sets, choice_set_lengths, choices
+
+    model, train_losses, train_accs, val_losses, val_accs = train_history_mnl(n, train_data, train_data, dim=3, lr=0.005, weight_decay=0)
+    plt.plot(range(500), train_losses)
+    plt.plot(range(500), train_accs)
+
     plt.show()
 
     print(model.beta)
 
 
-def train_history_model(model, histories, history_lengths, choice_sets, choice_set_lengths, choices, lr=1e-4, weight_decay=1e-4):
-    data_loader = DataLoader((histories, history_lengths, choice_sets, choice_set_lengths, choices),
-                             batch_size=128, shuffle=True)
+def train_history_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
+    print(f'Training {model.name} dim={model.dim}, lr={lr}, wd={weight_decay}, deta={model.beta}, learn_beta={model.learn_beta}...')
+
+    batch_size = 128
+    train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    val_data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, amsgrad=True, weight_decay=weight_decay)
 
-    losses = []
+    train_losses = []
+    train_accs = []
+    val_losses = []
+    val_accs = []
     for epoch in tqdm(range(500)):
-        total_loss = 0
-        count = 0
-        for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
+        train_loss = 0
+        train_count = 0
+        train_correct = 0
+        for histories, history_lengths, choice_sets, choice_set_lengths, choices in train_data_loader:
             model.train()
             choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
 
@@ -289,43 +300,75 @@ def train_history_model(model, histories, history_lengths, choice_sets, choice_s
                 model.beta.data = model.beta.clamp(0, 1)
 
             model.eval()
-            total_loss += loss.item()
-            count += 1
+            vals, idxs = choice_pred.max(1)
+            train_correct += (idxs == choices).long().sum().item() / choice_pred.size(0)
+            train_loss += loss.item()
+            train_count += 1
 
-        total_loss /= count
-        losses.append(total_loss)
+        train_accs.append(train_correct / train_count)
+        train_losses.append(train_loss / train_count)
 
-    return model, losses
+        val_loss = 0
+        val_count = 0
+        val_correct = 0
+        model.eval()
+        for histories, history_lengths, choice_sets, choice_set_lengths, choices in val_data_loader:
+            choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
+            loss = model.loss(choice_pred, choices)
+            vals, idxs = choice_pred.max(1)
+            val_correct += (idxs == choices).long().sum().item() / choice_pred.size(0)
+            val_loss += loss.item()
+            val_count += 1
+
+        val_losses.append(val_loss / val_count)
+        val_accs.append(val_correct / val_count)
+
+    return model, train_losses, train_accs, val_losses, val_accs
 
 
-def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
+def train_history_cdm(n, train_data, val_data, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
     print(f'Training History CDM (dim={dim}, lr={lr}, wd={weight_decay}, beta={beta}, learn_beta={learn_beta})')
     model = HistoryCDM(n, dim, beta, learn_beta)
-    return train_history_model(model, histories, history_lengths, choice_sets, choice_set_lengths, choices, lr, weight_decay)
+    return train_history_model(model, train_data, val_data, lr, weight_decay)
 
 
-def train_history_mnl(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
+def train_history_mnl(n, train_data, val_data, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
     model = HistoryMNL(n, dim, beta, learn_beta)
-    return train_history_model(model, histories, history_lengths, choice_sets, choice_set_lengths, choices, lr, weight_decay)
+    return train_history_model(model, train_data, val_data, lr, weight_decay)
 
 
-def train_lstm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, lr=1e-4, weight_decay=1e-4):
+def train_lstm(n, train_data, val_data, dim=64, lr=1e-4, weight_decay=1e-4, beta=None, learn_beta=None):
+    print(f'Training LSTM dim={dim}, lr={lr}, wd={weight_decay}...')
+    batch_size = 128
+
+    train_reverse_history = train_data[0].clone().detach()
+    val_reverse_history = val_data[0].clone().detach()
     # Reverse histories
-    for i in range(histories.size(0)):
-        histories[i, :history_lengths[i]] = histories[i, :history_lengths[i]].flip(0)
+    for i in range(train_reverse_history.size(0)):
+        train_reverse_history[i, :train_data[1][i]] = train_reverse_history[i, :train_data[1][i]].flip(0)
+
+    for i in range(val_reverse_history.size(0)):
+        val_reverse_history[i, :val_data[1][i]] = val_reverse_history[i, :val_data[1][i]].flip(0)
+
+    train_data = train_reverse_history, train_data[1], train_data[2], train_data[3], train_data[4]
+    val_data = val_reverse_history, val_data[1], val_data[2], val_data[3], val_data[4]
 
     model = LSTM(n, dim)
 
-    data_loader = DataLoader((histories, history_lengths, choice_sets, choice_set_lengths, choices),
-                             batch_size=128, shuffle=True, sort_batch=True, sort_index=1)
+    train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, sort_batch=True, sort_index=1)
+    val_data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True, sort_batch=True, sort_index=1)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, amsgrad=True, weight_decay=weight_decay)
 
-    losses = []
+    train_losses = []
+    train_accs = []
+    val_losses = []
+    val_accs = []
     for epoch in tqdm(range(500)):
-        total_loss = 0
-        count = 0
-        for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
+        train_loss = 0
+        train_count = 0
+        train_correct = 0
+        for histories, history_lengths, choice_sets, choice_set_lengths, choices in train_data_loader:
             model.train()
             choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
             loss = model.loss(choice_pred, choices)
@@ -334,13 +377,30 @@ def train_lstm(n, histories, history_lengths, choice_sets, choice_set_lengths, c
             optimizer.step()
 
             model.eval()
-            total_loss += loss.item()
-            count += 1
+            vals, idxs = choice_pred.max(1)
+            train_correct += (idxs == choices).long().sum().item() / choice_pred.size(0)
+            train_loss += loss.item()
+            train_count += 1
 
-        total_loss /= count
-        losses.append(total_loss)
+        train_accs.append(train_correct / train_count)
+        train_losses.append(train_loss / train_count)
 
-    return model, losses
+        val_loss = 0
+        val_count = 0
+        val_correct = 0
+        model.eval()
+        for histories, history_lengths, choice_sets, choice_set_lengths, choices in val_data_loader:
+            choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
+            loss = model.loss(choice_pred, choices)
+            vals, idxs = choice_pred.max(1)
+            val_correct += (idxs == choices).long().sum().item() / choice_pred.size(0)
+            val_loss += loss.item()
+            val_count += 1
+
+        val_losses.append(val_loss / val_count)
+        val_accs.append(val_correct / val_count)
+
+    return model, train_losses, train_accs, val_losses, val_accs
 
 
 if __name__ == '__main__':
