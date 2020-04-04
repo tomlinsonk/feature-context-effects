@@ -31,9 +31,9 @@ def test_model(model, dataset, loaded_data=None):
     batch_size = 128
 
     if model.name == 'lstm':
-        data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True, sort_batch=True, sort_index=1)
+        data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, sort_batch=True, sort_index=1)
     else:
-        data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True)
+        data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
     count = 0
     correct = 0
@@ -564,19 +564,37 @@ def plot_dataset_stats():
 
 if __name__ == '__main__':
     # plot_dataset_stats()
-    #
+
     # plot_compare_all()
 
-    graph, train_data, val_data, test_data = WikispeediaDataset.load()
+    graph, train_data, val_data, test_data = YoochooseDataset.load()
 
-    for param_fname in ('params/history_cdm_wikispeedia_params_64_0.005_0_0.5_True.pt',
-                        'params/wikispeedia_beta_1_params_64_0.005_0.pt',
-                        'params/wikispeedia_learn_beta_params_64_0.005_0.pt',
-                        'params/wikispeedia_beta_0_params_64_0.005_0.pt'):
+    for param_fname in ('params/history_cdm_yoochoose_params_64_0.005_0_0.5_True.pt',):
         print(param_fname)
 
         model = load_model(HistoryCDM, len(graph.nodes), 64, param_fname)
         print(model.num_items, model.dim, np.mean(model.target_embedding.weight.detach().numpy()))
         loaded_data = graph, train_data, val_data, test_data
-        acc, mean_rank, mrr = test_model(model, WikispeediaDataset, loaded_data=loaded_data)
+        acc, mean_rank, mrr = test_model(model, YoochooseDataset, loaded_data=loaded_data)
         print(f'Accuracy: {acc:.2f}, beta: {model.beta.item():.2f}')
+
+    # for param_fname in ('params/lstm_wikispeedia_params_64_0.005_0.pt',
+    #                     'params/wikispeedia_lstm_params_64_0.005_0.pt'):
+    #     print(param_fname)
+    #
+    #     model = load_model(LSTM, len(graph.nodes), 64, param_fname)
+    #     print(model.num_items, model.dim)
+    #     loaded_data = graph, train_data, val_data, test_data
+    #     acc, mean_rank, mrr = test_model(model, WikispeediaDataset, loaded_data=loaded_data)
+    #     print(f'Accuracy: {acc:.2f}')
+
+    # with open('results/history_cdm_wikispeedia_losses_64_0.005_0_0.5_True.pickle', 'rb') as f:
+    #     losses = pickle.load(f)
+    # plt.plot(range(500), losses, label='new_losses')
+    #
+    # with open('results/wikispeedia_learn_beta_losses_64_0.005_0.pickle', 'rb') as f:
+    #     old_losses = pickle.load(f)
+    # plt.plot(range(500), old_losses, label='old_losses', ls='dashed')
+    #
+    # plt.legend()
+    # plt.show()

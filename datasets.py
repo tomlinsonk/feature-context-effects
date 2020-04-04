@@ -359,4 +359,10 @@ class LastFMGenreDataset(Dataset):
 
 
 if __name__ == '__main__':
-    LastFMGenreDataset.print_stats()
+    graph, train, val, test = WikispeediaDataset.load()
+
+    print('Nodes', len(graph.nodes))
+    print('Edges', len(graph.edges))
+    for histories, history_lengths, choice_sets, choice_set_lengths, choices in train, val, test:
+        assert len(histories) == len(history_lengths) == len(choice_sets) == len(choice_set_lengths) == len(choices)
+        print(len(choices))
