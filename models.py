@@ -299,6 +299,7 @@ def train_history_model(model, histories, history_lengths, choice_sets, choice_s
 
 
 def train_history_cdm(n, histories, history_lengths, choice_sets, choice_set_lengths, choices, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
+    print(f'Training History CDM (dim={dim}, lr={lr}, wd={weight_decay}, beta={beta}, learn_beta={learn_beta})')
     model = HistoryCDM(n, dim, beta, learn_beta)
     return train_history_model(model, histories, history_lengths, choice_sets, choice_set_lengths, choices, lr, weight_decay)
 

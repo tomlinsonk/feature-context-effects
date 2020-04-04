@@ -4,7 +4,7 @@ import choix
 import numpy as np
 import torch
 
-from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset
+from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset
 from models import train_history_cdm, train_lstm, train_history_mnl
 
 
@@ -12,7 +12,9 @@ def run_history_cdm(dataset, dim, lr, wd, beta, learn_beta):
     graph, train_data, val_data, test_data = dataset.load()
 
     print(f'Training History CDM on {dataset.name} (dim={dim}, lr={lr}, wd={wd}, beta={beta}, learn_beta={learn_beta})')
-    model, losses = train_history_cdm(len(graph.nodes), *train_data, dim=dim, lr=lr, weight_decay=wd, beta=beta, learn_beta=learn_beta)
+    histories, history_lengths, choice_sets, choice_set_lengths, choices = train_data
+    model, losses = train_history_cdm(len(graph.nodes), histories, history_lengths, choice_sets, choice_set_lengths,
+                                      choices, dim=dim, lr=lr, weight_decay=wd, beta=beta, learn_beta=learn_beta)
     torch.save(model.state_dict(), f'history_cdm_{dataset.name}_params_{dim}_{lr}_{wd}_{beta}_{learn_beta}.pt')
     with open(f'history_cdm_{dataset.name}_losses_{dim}_{lr}_{wd}_{beta}_{learn_beta}.pickle', 'wb') as f:
         pickle.dump(losses, f)
@@ -104,5 +106,7 @@ def run_baselines(dataset):
 
 
 if __name__ == '__main__':
-    for dataset in (KosarakDataset, YoochooseDataset, WikispeediaDataset):
-        compare_methods(dataset)
+    # for dataset in (WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset):
+    #     compare_methods(dataset)
+
+    run_history_cdm(WikispeediaDataset, 64, 0.005, 0, 0.5, True)

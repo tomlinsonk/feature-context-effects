@@ -292,7 +292,71 @@ class KosarakDataset(Dataset):
             pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
 
 
+class LastFMGenreDataset(Dataset):
+    name = 'lastfm-genre'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+
+        with open(f'{DATA_DIR}/uchoice-Lastfm-Genres/uchoice-Lastfm-Genres.txt', 'rb') as f:
+            paths = [list(map(int, line.split())) for line in f.readlines()]
+
+        print('Initial paths', len(paths))
+        paths = [path for path in paths if len(path) <= 50]
+        print('Long paths remove', len(paths))
+
+        paths = [path for path in paths if len(path) >= 3]
+        print('Short paths removed', len(paths))
+
+        edges = [(path[i], path[i+1]) for path in paths for i in range(len(path) - 1)]
+        graph = nx.DiGraph(edges)
+
+        # to_remove = set()
+        # for node, degree in graph.out_degree():
+        #     if degree > 6000:
+        #         to_remove.add(node)
+        #
+        # print('Removing', len(to_remove), 'nodes')
+        #
+        # paths = [path for path in paths if all(node not in to_remove for node in path)]
+        #
+        # print('Degree selected paths', len(paths))
+
+        page_counts = np.bincount(list(itertools.chain.from_iterable(paths)))
+
+        len_paths = None
+        while len_paths != len(paths):
+            len_paths = len(paths)
+            paths = [path for path in paths if all(page_counts[page] >= 250 for page in path)]
+            page_counts = np.bincount(list(itertools.chain.from_iterable(paths)))
+            print('Count selected paths', len(paths))
+
+        edges = [(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)]
+        graph = nx.DiGraph(edges)
+
+        nodes = []
+        for i, node in enumerate(graph.nodes):
+            nodes.append(node)
+            graph.nodes[node]['index'] = i
+
+        largest_choice_set = max(graph.out_degree(), key=lambda x: x[1])[1]
+        longest_path = max(len(path) for path in paths)
+
+        print('Largest choice set', largest_choice_set)
+        print('Longest path', longest_path)
+        print('Nodes', len(graph.nodes))
+        print('Edges', len(graph.edges))
+
+        histories, history_lengths, choice_sets, choice_set_lengths, choices = cls.build_data_from_paths(paths, graph)
+        m = len(histories)
+        print('Samples:', m)
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_set_lengths,
+                                                         choices)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
 if __name__ == '__main__':
-    YoochooseDataset.print_stats()
-    KosarakDataset.print_stats()
-    WikispeediaDataset.print_stats()
+    LastFMGenreDataset.print_stats()

@@ -2,9 +2,10 @@ import os
 import pickle
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 
-from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset
+from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM
 
 
@@ -27,8 +28,12 @@ def test_model(model, dataset, loaded_data=None):
         graph, train_data, val_data, test_data = loaded_data
 
     n = len(graph.nodes)
+    batch_size = 128
 
-    data_loader = DataLoader(val_data, batch_size=128, shuffle=True, sort_batch=True, sort_index=1)
+    if model.name == 'lstm':
+        data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True, sort_batch=True, sort_index=1)
+    else:
+        data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True)
 
     count = 0
     correct = 0
@@ -40,10 +45,10 @@ def test_model(model, dataset, loaded_data=None):
         ranks = (torch.argsort(choice_pred, dim=1, descending=True) == choices[:, None]).nonzero()[:, 1] + 1
 
         vals, idxs = choice_pred.max(1)
-        mean_rank += ranks.sum().item() / 128
-        mrr += (1 / ranks.float()).sum().item() / 128
+        mean_rank += ranks.sum().item() / batch_size
+        mrr += (1 / ranks.float()).sum().item() / batch_size
         count += 1
-        correct += (idxs == choices).long().sum().item() / 128
+        correct += (idxs == choices).long().sum().item() / batch_size
 
     return correct / count, mean_rank / count, mrr / count
 
@@ -74,6 +79,7 @@ def plot_compare_all():
             beta_string = '' if method is LSTM else '_0.5_True'
             param_fname = f'params/{method.name}_{dataset.name}_params_64_0.005_0{beta_string}.pt'
             loss_fname = f'results/{method.name}_{dataset.name}_losses_64_0.005_0{beta_string}.pickle'
+            print(method, param_fname)
 
             if row == 0:
                 axes[row, col].annotate(f'{method.name}', xy=(0.5, 1), xytext=(0, 5),
@@ -88,18 +94,89 @@ def plot_compare_all():
             if not os.path.isfile(param_fname):
                 continue
 
-            model = load_model(LSTM, n, 64, param_fname)
+            model = load_model(method, n, 64, param_fname)
 
             acc, mean_rank, mrr = test_model(model, dataset, loaded_data=loaded_data)
+            print(f'Accuracy: {acc}')
 
             with open(loss_fname, 'rb') as f:
                 losses = pickle.load(f)
 
             axes[row, col].plot(range(500), losses)
 
-            axes[row, col].annotate(f'Val. acc: {acc:.2f}',
-                                    xy=(0.9, 0.8), xycoords='axes fraction', fontsize=10,
+            beta_string = f'$\\beta={model.beta.item():.2f}$' if method in (HistoryMNL, HistoryCDM) else ''
+
+            axes[row, col].annotate(f'Val. acc: {acc:.2f}\n{beta_string}',
+                                    xy=(0.9, 0.72), xycoords='axes fraction', fontsize=10,
                                     ha='right')
+
+    plt.show()
+
+
+def plot_dataset_stats():
+    fig, axes = plt.subplots(4, 2, figsize=(6, 8))
+
+    for row, dataset in enumerate((KosarakDataset, YoochooseDataset, WikispeediaDataset, LastFMGenreDataset)):
+        graph, train_data, val_data, test_data = dataset.load()
+        histories, history_lengths, choice_sets, choice_set_lengths, choices = [torch.cat([train_data[i], val_data[i], test_data[i]]).numpy() for i in range(len(train_data))]
+
+        axes[row, 1].annotate(f'{dataset.name}', xy=(1, 0.5), xytext=(-axes[row, 1].yaxis.labelpad + 20, 0),
+                                xycoords='axes fraction', textcoords='offset points',
+                                fontsize=14, ha='right', va='center', rotation=270)
+
+        # axes[row, col].annotate(f'{method.name}', xy=(0.5, 1), xytext=(0, 5),
+        #                         xycoords='axes fraction', textcoords='offset points',
+        #                         fontsize=14, ha='center', va='baseline')
+
+        degree_counts = np.bincount([deg for node, deg in graph.out_degree()])
+        axes[row, 0].scatter(range(len(degree_counts)), degree_counts, label='Node Outdegree', s=8, marker='d')
+
+        choice_set_dsn = np.bincount(choice_set_lengths)
+        axes[row, 0].scatter(range(len(choice_set_dsn)), choice_set_dsn, label='Choice Set Size', s=8, marker='s')
+        axes[row, 0].set_ylabel('Count')
+
+        history_dsn = np.bincount(history_lengths)
+        axes[row, 1].scatter(range(len(history_dsn)), history_dsn, label='History Length', s=8, marker='s')
+
+        for col in (0, 1):
+            axes[row, col].set_yscale('log')
+            axes[row, col].set_xscale('log')
+
+            axes[row, col].set_xlim(0.5)
+            axes[row, col].set_ylim(0.5)
+
+
+        # for col, method in enumerate((LSTM, HistoryMNL, HistoryCDM)):
+        #     beta_string = '' if method is LSTM else '_0.5_True'
+        #     param_fname = f'params/{method.name}_{dataset.name}_params_64_0.005_0{beta_string}.pt'
+        #     loss_fname = f'results/{method.name}_{dataset.name}_losses_64_0.005_0{beta_string}.pickle'
+        #     print(method, param_fname)
+        #
+        #     if row == 0:
+        #
+        #
+        #
+        #
+        #     if not os.path.isfile(param_fname):
+        #         continue
+        #
+        #     model = load_model(method, n, 64, param_fname)
+        #
+        #     acc, mean_rank, mrr = test_model(model, dataset, loaded_data=loaded_data)
+        #
+        #     with open(loss_fname, 'rb') as f:
+        #         losses = pickle.load(f)
+        #
+        #     axes[row, col].plot(range(500), losses)
+        #
+        #     axes[row, col].annotate(f'Val. acc: {acc:.2f}',
+        #                             xy=(0.9, 0.8), xycoords='axes fraction', fontsize=10,
+        #                             ha='right')
+
+    axes[0, 0].legend(loc='lower center', bbox_to_anchor=(0.5, 1.02))
+    axes[0, 1].legend(loc='lower center', bbox_to_anchor=(0.5, 1.02))
+    plt.show()
+
 
 
 # OLD PLOTTING STUFF
@@ -485,7 +562,21 @@ def plot_compare_all():
 #     plt.scatter(tsne[:, 0], tsne[:, 1])
 #     plt.show()
 
-
 if __name__ == '__main__':
-    plot_compare_all()
+    # plot_dataset_stats()
+    #
+    # plot_compare_all()
 
+    graph, train_data, val_data, test_data = WikispeediaDataset.load()
+
+    for param_fname in ('params/history_cdm_wikispeedia_params_64_0.005_0_0.5_True.pt',
+                        'params/wikispeedia_beta_1_params_64_0.005_0.pt',
+                        'params/wikispeedia_learn_beta_params_64_0.005_0.pt',
+                        'params/wikispeedia_beta_0_params_64_0.005_0.pt'):
+        print(param_fname)
+
+        model = load_model(HistoryCDM, len(graph.nodes), 64, param_fname)
+        print(model.num_items, model.dim, np.mean(model.target_embedding.weight.detach().numpy()))
+        loaded_data = graph, train_data, val_data, test_data
+        acc, mean_rank, mrr = test_model(model, WikispeediaDataset, loaded_data=loaded_data)
+        print(f'Accuracy: {acc:.2f}, beta: {model.beta.item():.2f}')
