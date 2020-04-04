@@ -272,7 +272,7 @@ def toy_example():
 
 
 def train_history_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
-    print(f'Training {model.name} dim={model.dim}, lr={lr}, wd={weight_decay}, deta={model.beta}, learn_beta={model.learn_beta}...')
+    print(f'Training {model.name} dim={model.dim}, lr={lr}, wd={weight_decay}, beta={model.beta.item()}, learn_beta={model.learn_beta}...')
 
     batch_size = 128
     train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
@@ -329,7 +329,6 @@ def train_history_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4)
 
 
 def train_history_cdm(n, train_data, val_data, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
-    print(f'Training History CDM (dim={dim}, lr={lr}, wd={weight_decay}, beta={beta}, learn_beta={learn_beta})')
     model = HistoryCDM(n, dim, beta, learn_beta)
     return train_history_model(model, train_data, val_data, lr, weight_decay)
 
