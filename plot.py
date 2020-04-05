@@ -31,9 +31,9 @@ def test_model(model, dataset, loaded_data=None):
     batch_size = 128
 
     if model.name == 'lstm':
-        data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, sort_batch=True, sort_index=1)
+        data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True, sort_batch=True, sort_index=1)
     else:
-        data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+        data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True)
 
     count = 0
     correct = 0
@@ -110,6 +110,55 @@ def plot_compare_all():
                                     xy=(0.9, 0.72), xycoords='axes fraction', fontsize=10,
                                     ha='right')
 
+    plt.show()
+
+
+def plot_grid_search(method, dataset):
+    lrs = [0.0001, 0.005, 0.01]
+    wds = [0, 1e-5, 1e-3]
+
+    fig, axes = plt.subplots(3, 3, sharex='col')
+
+    loaded_data = dataset.load()
+    n = len(loaded_data[0].nodes)
+
+    for row, wd in enumerate(wds):
+        for col, lr in enumerate(lrs):
+            beta_string = '_None_None' if method is LSTM else '_0.5_True'
+            param_fname = f'params/{method.name}_{dataset.name}_params_64_{lr}_{wd}{beta_string}.pt'
+            loss_fname = f'results/{method.name}_{dataset.name}_losses_64_{lr}_{wd}{beta_string}.pickle'
+
+            if row == 0:
+                axes[row, col].annotate(f'lr={lr}', xy=(0.5, 1), xytext=(0, 5),
+                                        xycoords='axes fraction', textcoords='offset points',
+                                        fontsize=14, ha='center', va='baseline')
+
+            if col == 2:
+                axes[row, col].annotate(f'wd={wd}', xy=(1, 0.5), xytext=(-axes[row, col].yaxis.labelpad + 20, 0),
+                                        xycoords='axes fraction', textcoords='offset points',
+                                        fontsize=14, ha='right', va='center', rotation=270)
+
+            if not os.path.isfile(param_fname):
+                continue
+
+            model = load_model(method, n, 64, param_fname)
+
+            acc, mean_rank, mrr = test_model(model, dataset, loaded_data=loaded_data)
+            print(f'Accuracy: {acc}')
+
+            with open(loss_fname, 'rb') as f:
+                train_losses, train_accs, val_losses, val_accs = pickle.load(f)
+
+            axes[row, col].plot(range(500), train_accs, label='train')
+            axes[row, col].plot(range(500), val_accs, label='val')
+
+            beta_string = f'$\\beta={model.beta.item():.2f}$' if method in (HistoryMNL, HistoryCDM) else ''
+
+            axes[row, col].annotate(f'Val. acc: {acc:.2f}\n{beta_string}',
+                                    xy=(0.9, 0.72), xycoords='axes fraction', fontsize=10,
+                                    ha='right')
+
+    axes[0, 0].legend()
     plt.show()
 
 
@@ -567,16 +616,20 @@ if __name__ == '__main__':
 
     # plot_compare_all()
 
-    graph, train_data, val_data, test_data = YoochooseDataset.load()
+    plot_grid_search(HistoryCDM, WikispeediaDataset)
+    plot_grid_search(HistoryMNL, WikispeediaDataset)
+    plot_grid_search(LSTM, WikispeediaDataset)
 
-    for param_fname in ('params/history_cdm_yoochoose_params_64_0.005_0_0.5_True.pt',):
-        print(param_fname)
-
-        model = load_model(HistoryCDM, len(graph.nodes), 64, param_fname)
-        print(model.num_items, model.dim, np.mean(model.target_embedding.weight.detach().numpy()))
-        loaded_data = graph, train_data, val_data, test_data
-        acc, mean_rank, mrr = test_model(model, YoochooseDataset, loaded_data=loaded_data)
-        print(f'Accuracy: {acc:.2f}, beta: {model.beta.item():.2f}')
+    # graph, train_data, val_data, test_data = YoochooseDataset.load()
+    #
+    # for param_fname in ('params/history_cdm_yoochoose_params_64_0.005_0_0.5_True.pt',):
+    #     print(param_fname)
+    #
+    #     model = load_model(HistoryCDM, len(graph.nodes), 64, param_fname)
+    #     print(model.num_items, model.dim, np.mean(model.target_embedding.weight.detach().numpy()))
+    #     loaded_data = graph, train_data, val_data, test_data
+    #     acc, mean_rank, mrr = test_model(model, YoochooseDataset, loaded_data=loaded_data)
+    #     print(f'Accuracy: {acc:.2f}, beta: {model.beta.item():.2f}')
 
     # for param_fname in ('params/lstm_wikispeedia_params_64_0.005_0.pt',
     #                     'params/wikispeedia_lstm_params_64_0.005_0.pt'):
