@@ -199,7 +199,7 @@ class FeatureMNL(nn.Module):
         super().__init__()
 
         self.num_features = num_features
-        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
+        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True).cuda()
 
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
@@ -228,8 +228,8 @@ class FeatureCDM(nn.Module):
         super().__init__()
 
         self.num_features = num_features
-        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
-        self.contexts = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
+        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True).cuda()
+        self.contexts = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True).cuda()
 
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
