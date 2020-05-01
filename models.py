@@ -342,7 +342,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
         device = torch.device('cuda:0')
         print('Running on GPU')
     else:
-        device = torch.device('CPU')
+        device = torch.device('cpu')
         print('Running on CPU')
 
     model.device = device
@@ -353,7 +353,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
     else:
         print(f'Training {model.name}, lr={lr}, wd={weight_decay}...')
 
-    batch_size = 128
+    batch_size = None
     train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, device=device)
     val_data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, device=device)
 
