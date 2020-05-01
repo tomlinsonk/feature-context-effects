@@ -4,9 +4,13 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import scipy.stats as stats
+import matplotlib.ticker as ticker
 
-from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset
-from models import HistoryCDM, HistoryMNL, DataLoader, LSTM
+
+from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
+    EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset
+from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM
 
 
 def load_model(Model, n, dim, param_fname):
@@ -14,6 +18,15 @@ def load_model(Model, n, dim, param_fname):
         model = Model(n, dim)
     else:
         model = Model(n, dim, 0.5)
+
+    model.load_state_dict(torch.load(param_fname))
+    model.eval()
+
+    return model
+
+
+def load_feature_model(Model, num_features, param_fname):
+    model = Model(num_features)
 
     model.load_state_dict(torch.load(param_fname))
     model.eval()
@@ -114,8 +127,8 @@ def plot_compare_all():
 
 
 def plot_grid_search(method, dataset):
-    lrs = [0.0001, 0.005, 0.01]
-    wds = [0, 1e-5, 1e-3]
+    lrs = [0.005]
+    wds = [0, 1e-5, 1e-4]
 
     fig, axes = plt.subplots(3, 3, sharex='col')
 
@@ -125,8 +138,8 @@ def plot_grid_search(method, dataset):
     for row, wd in enumerate(wds):
         for col, lr in enumerate(lrs):
             beta_string = '_None_None' if method is LSTM else '_0.5_True'
-            param_fname = f'params/{method.name}_{dataset.name}_params_64_{lr}_{wd}{beta_string}.pt'
-            loss_fname = f'results/{method.name}_{dataset.name}_losses_64_{lr}_{wd}{beta_string}.pickle'
+            param_fname = f'params/{method.name}_{dataset.name}_params_8_{lr}_{wd}{beta_string}.pt'
+            loss_fname = f'results/{method.name}_{dataset.name}_losses_8_{lr}_{wd}{beta_string}.pickle'
 
             if row == 0:
                 axes[row, col].annotate(f'lr={lr}', xy=(0.5, 1), xytext=(0, 5),
@@ -141,7 +154,7 @@ def plot_grid_search(method, dataset):
             if not os.path.isfile(param_fname):
                 continue
 
-            model = load_model(method, n, 64, param_fname)
+            model = load_model(method, n, 8, param_fname)
 
             acc, mean_rank, mrr = test_model(model, dataset, loaded_data=loaded_data)
             print(f'Accuracy: {acc}')
@@ -158,8 +171,12 @@ def plot_grid_search(method, dataset):
                                     xy=(0.9, 0.72), xycoords='axes fraction', fontsize=10,
                                     ha='right')
 
-    axes[0, 0].legend()
-    plt.show()
+            axes[row, col].set_ylim(0, 1)
+
+    axes[0, 0].legend(loc='best')
+    plt.savefig(f'{method.name}_{dataset.name}_grid_search.pdf', bbox_inches='tight')
+
+    plt.close()
 
 
 def plot_dataset_stats():
@@ -225,6 +242,119 @@ def plot_dataset_stats():
     axes[0, 0].legend(loc='lower center', bbox_to_anchor=(0.5, 1.02))
     axes[0, 1].legend(loc='lower center', bbox_to_anchor=(0.5, 1.02))
     plt.show()
+
+
+def examine_email_enron():
+    graph, train_data, val_data, test_data = FacebookWallDataset.load()
+    histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [
+        torch.cat([train_data[i], val_data[i], test_data[i]]).numpy() for i in range(len(train_data))]
+    # histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [x.numpy() for x in train_data]
+
+
+
+    in_degree_ratios = []
+    out_degree_ratios = []
+    reciprocity_ratios = []
+
+    chosen_in_degrees = []
+    chosen_out_degrees = []
+    chosen_reciprocities = []
+
+    mean_available_in_degrees = []
+    mean_available_out_degrees = []
+    mean_available_reciprocities = []
+
+    for i in range(len(choice_set_features)):
+        choice = choices[i]
+        choice_set = choice_set_features[i, :choice_set_lengths[i]]
+
+        mean_available_reciprocities.append(np.mean(choice_set[:, 2]))
+
+        # Convert reciprocities to -1/1 and log-degrees to degrees
+        choice_set[:, 0] = np.exp(choice_set[:, 0])
+        choice_set[:, 1] = np.exp(choice_set[:, 1])
+
+        in_degree_ratios.append(choice_set[choice, 0] / np.mean(choice_set[:, 0]))
+        out_degree_ratios.append(choice_set[choice, 1] / np.mean(choice_set[:, 1]))
+        reciprocity_ratios.append(torch.nn.functional.softmax(torch.tensor(choice_set[:, 2]), dim=0)[choice].item() * choice_set_lengths[i])
+
+        chosen_in_degrees.append(choice_set[choice, 0])
+        chosen_out_degrees.append(choice_set[choice, 1])
+        chosen_reciprocities.append(choice_set[choice, 2])
+
+        mean_available_in_degrees.append(np.mean(choice_set[:, 0]))
+        mean_available_out_degrees.append(np.mean(choice_set[:, 1]))
+
+    in_degree_ratios = np.array(in_degree_ratios)
+    out_degree_ratios = np.array(out_degree_ratios)
+    reciprocity_ratios = np.array(reciprocity_ratios)
+
+    chosen_in_degrees = np.array(chosen_in_degrees)
+    chosen_out_degrees = np.array(chosen_out_degrees)
+    chosen_reciprocities = np.array(chosen_reciprocities)
+
+    mean_available_in_degrees = np.array(mean_available_in_degrees)
+    mean_available_out_degrees = np.array(mean_available_out_degrees)
+    mean_available_reciprocities = np.array(mean_available_reciprocities)
+
+    plt.set_cmap('plasma')
+
+    fig, axes = plt.subplots(3, 3, figsize=(10, 10), sharex='col', sharey='row')
+    plt.subplots_adjust(wspace=0.1, hspace=0.1)
+
+    xlims = [(1, 100), (1, 100), (0.005, 1.2)]
+
+    num_bins = 100
+
+    for j, (x_variable, x_name) in enumerate([(mean_available_in_degrees, 'In-degree'), (mean_available_out_degrees, 'Out-degree'), (mean_available_reciprocities, 'Reciprocity')]):
+
+        values, bins = np.histogram(x_variable, bins=np.logspace(np.log(xlims[j][0]), np.log(xlims[j][1]), num_bins))
+
+        idx = np.digitize(x_variable, bins)
+
+        for i, (y_variable, y_name) in enumerate([(in_degree_ratios, 'Chosen In-degree Ratio'), (out_degree_ratios, 'Chosen Out-degree Ratio'), (reciprocity_ratios, 'Chosen Reciprocity Ratio')]):
+            mean_y_vars = np.zeros(num_bins)
+            bin_counts = np.zeros(num_bins)
+
+            for bin in range(num_bins):
+                mean_y_vars[bin] = np.mean(y_variable[idx == bin])
+                bin_counts[bin] = np.count_nonzero(idx == bin)
+
+            log_lengths = np.log(choice_set_lengths)
+
+            scatterplot = axes[i, j].scatter(x_variable, y_variable, s=30, alpha=0.5, marker='.', linewidth=0, c=log_lengths)
+
+            axes[i, j].scatter(bins, mean_y_vars, alpha=1, s=bin_counts ** 0.8, marker='o', color='black')
+            axes[i, j].scatter(bins, mean_y_vars, alpha=1, s=1, marker='.', color='white')
+
+            if j == 0:
+                axes[i, j].set_ylabel(f'{y_name}')
+            else:
+                plt.setp(axes[i, j].get_yticklabels(), visible=False)
+
+            if i == 2:
+                axes[i, j].set_xlabel(f'Choice Set {x_name}')
+                axes[i, j].set_yscale('log')
+            else:
+                axes[i, j].set_yscale('log')
+
+            axes[i, j].set_xlim(*xlims[j])
+            axes[i, j].set_xscale('log')
+
+    # axes[2, 0].set_ylim(0.3, 3)
+    # axes[2, 0].set_yticks([0.3, 1, 3])
+    # axes[2, 0].get_yaxis().set_major_formatter(ticker.FuncFormatter(lambda y, _: '{:g}'.format(y)))
+    # axes[2, 0].get_yaxis().set_minor_formatter(ticker.NullFormatter())
+
+    cbar = fig.colorbar(scatterplot, ax=axes, location='top', shrink=0.3)
+    cbar.set_label('log Choice Set Size')
+
+    plt.savefig(f'facebook-wall-log_probs.png', bbox_inches='tight', dpi=200)
+    plt.close()
+
+    # model = load_feature_model(FeatureCDM, 3, 'feature_cdm_mathoverflow_params_0.01_0.pt')
+    # print(model.contexts, model.weights)
+
 
 
 
@@ -612,13 +742,29 @@ def plot_dataset_stats():
 #     plt.show()
 
 if __name__ == '__main__':
+    examine_email_enron()
+
+
+    # model = load_feature_model(FeatureCDM, 3, 'feature_cdm_mathoverflow_params_0.01_0.pt')
+    # print(model.contexts, model.weights)
+    # for param_name, loss_name in zip(('feature_mnl_email-enron_params_0.005_0.pt', 'feature_mnl_email-enron_params_0.005_0.0001.pt', 'feature_mnl_email-enron_params_0.005_0.001.pt'),
+    #                               ('feature_mnl_email-enron_losses_0.005_0.pickle', 'feature_mnl_email-enron_losses_0.005_0.0001.pickle', 'feature_mnl_email-enron_losses_0.005_0.001.pickle')):
+    #
+    #     model = load_feature_model(FeatureMNL, 3, param_name)
+    #     print(model.weights)
+    #
+    #     with open(loss_name, 'rb') as f:
+    #         train_losses, train_accs, val_losses, val_accs = pickle.load(f)
+    #
+    #     print(train_accs[-1], val_accs[-1])
+
     # plot_dataset_stats()
 
     # plot_compare_all()
 
-    plot_grid_search(HistoryCDM, WikispeediaDataset)
-    plot_grid_search(HistoryMNL, WikispeediaDataset)
-    plot_grid_search(LSTM, WikispeediaDataset)
+    # plot_grid_search(HistoryCDM, EmailEnronDataset)
+    # plot_grid_search(HistoryMNL, EmailEnronDataset)
+    # plot_grid_search(LSTM, YoochooseDataset)
 
     # graph, train_data, val_data, test_data = YoochooseDataset.load()
     #

@@ -191,6 +191,69 @@ class HistoryMNL(nn.Module):
         return nn.functional.nll_loss(y_pred, y)
 
 
+class FeatureMNL(nn.Module):
+
+    name = 'feature_mnl'
+
+    def __init__(self, num_features):
+        super().__init__()
+
+        self.num_features = num_features
+        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
+
+    def forward(self, choice_set_features, choice_set_lengths):
+        batch_size, max_choice_set_len, num_feats = choice_set_features.size()
+
+        utilities = (self.weights * choice_set_features).sum(-1)
+
+        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
+        return nn.functional.log_softmax(utilities, 1)
+
+    def loss(self, y_pred, y):
+        """
+        The error in inferred log-probabilities given observations
+        :param y_pred: log(choice probabilities)
+        :param y: observed choices
+        :return: the loss
+        """
+
+        return nn.functional.nll_loss(y_pred, y)
+
+
+class FeatureCDM(nn.Module):
+
+    name = 'feature_cdm'
+
+    def __init__(self, num_features):
+        super().__init__()
+
+        self.num_features = num_features
+        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
+        self.contexts = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
+
+    def forward(self, choice_set_features, choice_set_lengths):
+        batch_size, max_choice_set_len, num_feats = choice_set_features.size()
+
+        context_feature_sums = (choice_set_features.sum(1, keepdim=True) - choice_set_features)
+
+        context_times_feature = (self.contexts.T @ choice_set_features.unsqueeze(3)).squeeze()
+
+        utilities = ((context_feature_sums * context_times_feature).sum(-1)) / choice_set_lengths[:, None] + (self.weights * choice_set_features).sum(-1)
+
+        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
+        return nn.functional.log_softmax(utilities, 1)
+
+    def loss(self, y_pred, y):
+        """
+        The error in inferred log-probabilities given observations
+        :param y_pred: log(choice probabilities)
+        :param y: observed choices
+        :return: the loss
+        """
+
+        return nn.functional.nll_loss(y_pred, y)
+
+
 class LSTM(nn.Module):
 
     name = 'lstm'
@@ -271,8 +334,11 @@ def toy_example():
     print(model.beta)
 
 
-def train_history_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
-    print(f'Training {model.name} dim={model.dim}, lr={lr}, wd={weight_decay}, beta={model.beta.item()}, learn_beta={model.learn_beta}...')
+def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
+    if 'history' in model.name:
+        print(f'Training {model.name} dim={model.dim}, lr={lr}, wd={weight_decay}, beta={model.beta.item()}, learn_beta={model.learn_beta}...')
+    else:
+        print(f'Training {model.name}, lr={lr}, wd={weight_decay}...')
 
     batch_size = 128
     train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
@@ -284,13 +350,14 @@ def train_history_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4)
     train_accs = []
     val_losses = []
     val_accs = []
-    for epoch in tqdm(range(500)):
+    for epoch in range(100):
         train_loss = 0
         train_count = 0
         train_correct = 0
-        for histories, history_lengths, choice_sets, choice_set_lengths, choices in train_data_loader:
+        for batch in train_data_loader:
+            choices = batch[-1]
             model.train()
-            choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
+            choice_pred = model(*batch[:-1])
 
             loss = model.loss(choice_pred, choices)
 
@@ -298,8 +365,9 @@ def train_history_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4)
             loss.backward()
             optimizer.step()
 
-            with torch.no_grad():
-                model.beta.data = model.beta.clamp(0, 1)
+            if 'history' in model.name:
+                with torch.no_grad():
+                    model.beta.data = model.beta.clamp(0, 1)
 
             model.eval()
             vals, idxs = choice_pred.max(1)
@@ -310,32 +378,53 @@ def train_history_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4)
         train_accs.append(train_correct / train_count)
         train_losses.append(train_loss / train_count)
 
+        total_val_loss = 0
         val_loss = 0
         val_count = 0
         val_correct = 0
+        val_top5 = 0
         model.eval()
-        for histories, history_lengths, choice_sets, choice_set_lengths, choices in val_data_loader:
-            choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
+        for batch in val_data_loader:
+            choices = batch[-1]
+            choice_pred = model(*batch[:-1])
             loss = model.loss(choice_pred, choices)
             vals, idxs = choice_pred.max(1)
             val_correct += (idxs == choices).long().sum().item() / choice_pred.size(0)
             val_loss += loss.item()
+
+            total_val_loss += nn.functional.nll_loss(choice_pred, choices, reduction='sum').item()
+
+            vals, idxs = torch.topk(choice_pred, 10, dim=1)
+            val_top5 += (idxs == choices[:, None]).long().sum().item() / choice_pred.size(0)
             val_count += 1
 
         val_losses.append(val_loss / val_count)
         val_accs.append(val_correct / val_count)
+
+        print(f'{epoch}: {train_losses[-1]:.3f}, {val_losses[-1]:.3f}, {total_val_loss}, {val_accs[-1]}')
+        # print(model.contexts.detach().numpy())
 
     return model, train_losses, train_accs, val_losses, val_accs
 
 
 def train_history_cdm(n, train_data, val_data, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
     model = HistoryCDM(n, dim, beta, learn_beta)
-    return train_history_model(model, train_data, val_data, lr, weight_decay)
+    return train_model(model, train_data, val_data, lr, weight_decay)
 
 
 def train_history_mnl(n, train_data, val_data, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
     model = HistoryMNL(n, dim, beta, learn_beta)
-    return train_history_model(model, train_data, val_data, lr, weight_decay)
+    return train_model(model, train_data, val_data, lr, weight_decay)
+
+
+def train_feature_mnl(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4):
+    model = FeatureMNL(num_features)
+    return train_model(model, train_data, val_data, lr, weight_decay)
+
+
+def train_feature_cdm(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4):
+    model = FeatureCDM(num_features)
+    return train_model(model, train_data, val_data, lr, weight_decay)
 
 
 def train_lstm(n, train_data, val_data, dim=64, lr=1e-4, weight_decay=1e-4, beta=None, learn_beta=None):

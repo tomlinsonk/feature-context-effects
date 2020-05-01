@@ -2,6 +2,7 @@ import collections
 import itertools
 import os
 import pickle
+import random
 
 import numpy as np
 import torch
@@ -35,17 +36,19 @@ class Dataset(ABC):
         pass
 
     @classmethod
-    def data_split(cls, m, *tensors, train_frac=0.6, val_frac=0.2):
+    def data_split(cls, m, *tensors, train_frac=0.6, val_frac=0.2, shuffle=True):
         """
         Split the given data (with m samples) into train, validation, and test sets 
         :param m: number of samples
         :param tensors: a sequence of data tensors
         :param train_frac: the fraction of data to allocate for training
         :param val_frac: the fraction of data to allocate for validation. The rest is used for testing
+        :param shuffle: if true, shuffle data. Otherwise take first chunk as train, then val, then test
         :return: three lists of tensors for 1. training, 2. validation, and 3. testing
         """
         idx = list(range(m))
-        np.random.shuffle(idx)
+        if shuffle:
+            np.random.shuffle(idx)
         train_end = int(m * train_frac)
         val_end = train_end + int(m * val_frac)
 
@@ -99,6 +102,112 @@ class Dataset(ABC):
 
         return histories, history_lengths, choice_sets, choice_set_lengths, choices
 
+    @classmethod
+    def filter_paths_by_length(cls, paths, min_threshold, max_threshold):
+        return [path for path in paths if min_threshold <= len(path) <= max_threshold]
+
+    @classmethod
+    def filter_paths_by_node_outdegree(cls, paths, max_outdegree):
+        edges = [(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)]
+        graph = nx.DiGraph(edges)
+
+        to_remove = set()
+        for node, degree in graph.out_degree():
+            if degree > max_outdegree:
+                to_remove.add(node)
+
+        return [path for path in paths if all(node not in to_remove for node in path)]
+
+    @classmethod
+    def filter_paths_by_node_appearances(cls, paths, min_appearances):
+        page_counts = np.bincount(list(itertools.chain.from_iterable(paths)))
+
+        len_paths = None
+        while len_paths != len(paths):
+            len_paths = len(paths)
+            paths = [path for path in paths if all(page_counts[page] >= min_appearances for page in path)]
+            page_counts = np.bincount(list(itertools.chain.from_iterable(paths)))
+
+        return paths
+
+    @classmethod
+    def index_nodes(cls, graph):
+        for i, node in enumerate(graph.nodes):
+            graph.nodes[node]['index'] = i
+
+    @classmethod
+    def build_triadic_closure_data(cls, sorted_edges):
+        graph = nx.DiGraph()
+
+        node_histories = dict()
+        choice_sets = []
+        choice_sets_with_features = []
+        histories = []
+        choices = []
+
+        for sender, recipient in tqdm(sorted_edges):
+            if sender not in node_histories:
+                node_histories[sender] = []
+
+            if graph.has_node(sender) and graph.has_node(recipient):
+                try:
+                    length_2_paths = []
+                    for path in nx.shortest_simple_paths(graph, sender, recipient):
+                        if len(path) == 3:
+                            length_2_paths.append(path)
+                        else:
+                            break
+                    if len(length_2_paths) > 0:
+                        intermediate = random.choice(length_2_paths)[1]
+                        choice_set = [node for node in graph.neighbors(intermediate) if
+                                      not graph.has_edge(sender, node)]
+                        choice_set_features = [[max(0, np.log(graph.in_degree(node))),
+                                                max(0, np.log(graph.out_degree(node))),
+                                                int(graph.has_edge(node, sender))]
+                                               for node in choice_set]
+
+                        choice_sets.append(choice_set)
+                        choice_sets_with_features.append(choice_set_features)
+                        histories.append(node_histories[sender][:])
+                        choices.append(choice_set.index(recipient))
+
+                        node_histories[sender].append(recipient)
+
+                except nx.NetworkXNoPath:
+                    pass
+
+            graph.add_edge(sender, recipient)
+
+        longest_history = max(len(history) for history in histories)
+        largest_choice_set = max(len(choice_set) for choice_set in choice_sets)
+
+        n = len(graph.nodes)
+        cls.index_nodes(graph)
+
+        history_lengths = []
+        choice_set_lengths = []
+
+        for history in histories:
+            history_lengths.append(len(history))
+            history[:] = [graph.nodes[node]['index'] for node in history] + [n] * (longest_history - len(history))
+
+        for choice_set in choice_sets:
+            choice_set_lengths.append(len(choice_set))
+            choice_set[:] = [graph.nodes[node]['index'] for node in choice_set] + [n] * (
+                        largest_choice_set - len(choice_set))
+
+        for choice_set_with_features in choice_sets_with_features:
+            choice_set_with_features += [[0, 0, 0] for _ in range(largest_choice_set - len(choice_set_with_features))]
+
+        histories = torch.tensor(histories)
+        history_lengths = torch.tensor(history_lengths)
+        choice_sets = torch.tensor(choice_sets)
+        choice_sets_with_features = torch.tensor(choice_sets_with_features)
+        choice_set_lengths = torch.tensor(choice_set_lengths)
+        choices = torch.tensor(choices)
+
+        return graph, histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices
+
 
 class WikispeediaDataset(Dataset):
 
@@ -135,18 +244,11 @@ class WikispeediaDataset(Dataset):
             cls._remove_back(split_path)
             paths.append(split_path)
 
-        paths = [path for path in paths if len(path) <= 20]
-
-        # Index nodes
-        nodes = []
-        for i, node in enumerate(graph.nodes):
-            nodes.append(node)
-            graph.nodes[node]['index'] = i
+        paths = cls.filter_paths_by_length(paths, 0, 20)
+        cls.index_nodes(graph)
 
         histories, history_lengths, choice_sets, choice_set_lengths, choices = cls.build_data_from_paths(paths, graph)
         m = len(histories)
-        print('Samples:', m)
-
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_set_lengths, choices)
 
         with open(file_name, 'wb') as f:
@@ -172,54 +274,15 @@ class YoochooseDataset(Dataset):
                 current_path = [item]
         paths.append(current_path)
 
-        print('Initial paths', len(paths))
-        paths = [path for path in paths if len(path) <= 50]
-        print('Long paths removed', len(paths))
+        paths = cls.filter_paths_by_length(paths, 3, 50)
+        paths = cls.filter_paths_by_node_outdegree(paths, 500)
+        paths = cls.filter_paths_by_node_appearances(paths, 25)
 
-        paths = [path for path in paths if len(path) >= 3]
-        print('Short paths removed', len(paths))
-
-        edges = [(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)]
-        graph = nx.DiGraph(edges)
-
-        to_remove = set()
-        for node, degree in graph.out_degree():
-            if degree > 500:
-                to_remove.add(node)
-
-        print('Removing', len(to_remove), 'nodes')
-
-        paths = [path for path in paths if all(node not in to_remove for node in path)]
-
-        print('Degree selected paths', len(paths))
-
-        page_counts = np.bincount(list(itertools.chain.from_iterable(paths)))
-
-        len_paths = None
-        while len_paths != len(paths):
-            len_paths = len(paths)
-            paths = [path for path in paths if all(page_counts[page] >= 25 for page in path)]
-            page_counts = np.bincount(list(itertools.chain.from_iterable(paths)))
-            print('Count selected paths', len(paths))
-
-        edges = [(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)]
-
-        graph = nx.DiGraph(edges)
-
-        nodes = []
-        for i, node in enumerate(graph.nodes):
-            nodes.append(node)
-            graph.nodes[node]['index'] = i
-
-        largest_choice_set = max(graph.out_degree(), key=lambda x: x[1])[1]
-        longest_path = max(len(path) for path in paths)
-
-        print('Largest choice set', largest_choice_set)
-        print('Longest path', longest_path)
+        graph = nx.DiGraph([(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)])
+        cls.index_nodes(graph)
 
         histories, history_lengths, choice_sets, choice_set_lengths, choices = cls.build_data_from_paths(paths, graph)
         m = len(histories)
-        print('Samples:', m)
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_set_lengths,
                                                          choices)
@@ -237,53 +300,17 @@ class KosarakDataset(Dataset):
         with open(f'{DATA_DIR}/uchoice-Kosarak/uchoice-Kosarak.txt', 'rb') as f:
             paths = [list(map(int, line.split())) for line in f.readlines()]
 
-        print('Initial paths', len(paths))
-        paths = [path for path in paths if len(path) <= 50]
-        print('Long paths remove', len(paths))
-
-        paths = [path for path in paths if len(path) >= 3]
-        print('Short paths removed', len(paths))
-
-        edges = [(path[i], path[i+1]) for path in paths for i in range(len(path) - 1)]
-        graph = nx.DiGraph(edges)
-
-        to_remove = set()
-        for node, degree in graph.out_degree():
-            if degree > 6000:
-                to_remove.add(node)
-
-        print('Removing', len(to_remove), 'nodes')
-
-        paths = [path for path in paths if all(node not in to_remove for node in path)]
-
-        print('Degree selected paths', len(paths))
-
-        page_counts = np.bincount(list(itertools.chain.from_iterable(paths)))
-
-        len_paths = None
-        while len_paths != len(paths):
-            len_paths = len(paths)
-            paths = [path for path in paths if all(page_counts[page] >= 2 for page in path)]
-            page_counts = np.bincount(list(itertools.chain.from_iterable(paths)))
-            print('Count selected paths', len(paths))
+        paths = cls.filter_paths_by_length(paths, 3, 50)
+        paths = cls.filter_paths_by_node_outdegree(paths, 6000)
+        paths = cls.filter_paths_by_node_appearances(paths, 2)
 
         edges = [(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)]
         graph = nx.DiGraph(edges)
 
-        nodes = []
-        for i, node in enumerate(graph.nodes):
-            nodes.append(node)
-            graph.nodes[node]['index'] = i
-
-        largest_choice_set = max(graph.out_degree(), key=lambda x: x[1])[1]
-        longest_path = max(len(path) for path in paths)
-
-        print('Largest choice set', largest_choice_set)
-        print('Longest path', longest_path)
+        cls.index_nodes(graph)
 
         histories, history_lengths, choice_sets, choice_set_lengths, choices = cls.build_data_from_paths(paths, graph)
         m = len(histories)
-        print('Samples:', m)
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_set_lengths,
                                                          choices)
@@ -301,55 +328,14 @@ class LastFMGenreDataset(Dataset):
         with open(f'{DATA_DIR}/uchoice-Lastfm-Genres/uchoice-Lastfm-Genres.txt', 'rb') as f:
             paths = [list(map(int, line.split())) for line in f.readlines()]
 
-        print('Initial paths', len(paths))
-        paths = [path for path in paths if len(path) <= 50]
-        print('Long paths remove', len(paths))
+        paths = cls.filter_paths_by_length(paths, 3, 50)
+        paths = cls.filter_paths_by_node_appearances(paths, 250)
 
-        paths = [path for path in paths if len(path) >= 3]
-        print('Short paths removed', len(paths))
-
-        edges = [(path[i], path[i+1]) for path in paths for i in range(len(path) - 1)]
-        graph = nx.DiGraph(edges)
-
-        # to_remove = set()
-        # for node, degree in graph.out_degree():
-        #     if degree > 6000:
-        #         to_remove.add(node)
-        #
-        # print('Removing', len(to_remove), 'nodes')
-        #
-        # paths = [path for path in paths if all(node not in to_remove for node in path)]
-        #
-        # print('Degree selected paths', len(paths))
-
-        page_counts = np.bincount(list(itertools.chain.from_iterable(paths)))
-
-        len_paths = None
-        while len_paths != len(paths):
-            len_paths = len(paths)
-            paths = [path for path in paths if all(page_counts[page] >= 250 for page in path)]
-            page_counts = np.bincount(list(itertools.chain.from_iterable(paths)))
-            print('Count selected paths', len(paths))
-
-        edges = [(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)]
-        graph = nx.DiGraph(edges)
-
-        nodes = []
-        for i, node in enumerate(graph.nodes):
-            nodes.append(node)
-            graph.nodes[node]['index'] = i
-
-        largest_choice_set = max(graph.out_degree(), key=lambda x: x[1])[1]
-        longest_path = max(len(path) for path in paths)
-
-        print('Largest choice set', largest_choice_set)
-        print('Longest path', longest_path)
-        print('Nodes', len(graph.nodes))
-        print('Edges', len(graph.edges))
+        graph = nx.DiGraph([(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)])
+        cls.index_nodes(graph)
 
         histories, history_lengths, choice_sets, choice_set_lengths, choices = cls.build_data_from_paths(paths, graph)
         m = len(histories)
-        print('Samples:', m)
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_set_lengths,
                                                          choices)
@@ -358,11 +344,188 @@ class LastFMGenreDataset(Dataset):
             pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
 
 
-if __name__ == '__main__':
-    graph, train, val, test = WikispeediaDataset.load()
+class ORCIDSwitchDataset(Dataset):
+    name = 'orcid-switches'
 
-    print('Nodes', len(graph.nodes))
-    print('Edges', len(graph.edges))
-    for histories, history_lengths, choice_sets, choice_set_lengths, choices in train, val, test:
-        assert len(histories) == len(history_lengths) == len(choice_sets) == len(choice_set_lengths) == len(choices)
-        print(len(choices))
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        switches = pd.read_csv(f'{DATA_DIR}/orcid-switches/all_switches.csv', usecols=('oid', 'from_matched_field', 'to_matched_field')).to_numpy()
+
+        paths = []
+        current_user = None
+        current_path = []
+        for oid, from_field, to_field, in switches:
+            if oid == current_user:
+                current_path.append(to_field)
+            else:
+                paths.append(current_path)
+                current_user = oid
+                current_path = [from_field, to_field]
+        paths.append(current_path)
+
+        print('Initial paths', len(paths))
+        paths = cls.filter_paths_by_length(paths, 3, np.inf)
+        print('Length filtered paths', len(paths))
+
+        graph = nx.DiGraph([(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)])
+        cls.index_nodes(graph)
+
+        histories, history_lengths, choice_sets, choice_set_lengths, choices = cls.build_data_from_paths(paths, graph)
+        m = len(histories)
+
+        print('Samples', m)
+        print('Largest choice set', max(choice_set_lengths).item())
+        print('Longest path', max(history_lengths).item() + 1)
+        print('Num nodes', len(graph.nodes))
+        print('Num edges:', len(graph.edges))
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_set_lengths,
+                                                         choices)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+class EmailEnronDataset(Dataset):
+    name = 'email-enron'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/email-Enron/email-Enron.txt', usecols=(0, 1, 2), dtype=int)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+        m = len(histories)
+
+        print('Samples', m)
+        print('Largest choice set', max(choice_set_lengths).item())
+        print('Longest path', max(history_lengths).item() + 1)
+        print('Num nodes', len(graph.nodes))
+        print('Num edges:', len(graph.edges))
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+class CollegeMsgDataset(Dataset):
+    name = 'college-msg'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/CollegeMsg/CollegeMsg.txt', usecols=(0, 1, 2), dtype=int)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+
+        m = len(histories)
+
+        print('Samples', m)
+        print('Largest choice set', max(choice_set_lengths).item())
+        print('Longest path', max(history_lengths).item() + 1)
+        print('Num nodes', len(graph.nodes))
+        print('Num edges:', len(graph.edges))
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+class EmailEUDataset(Dataset):
+    name = 'email-eu'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/email-Eu/email-Eu-core-temporal.txt', usecols=(0, 1, 2), dtype=int)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+
+        m = len(histories)
+
+        print('Samples', m)
+        print('Largest choice set', max(choice_set_lengths).item())
+        print('Longest path', max(history_lengths).item() + 1)
+        print('Num nodes', len(graph.nodes))
+        print('Num edges:', len(graph.edges))
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+class MathOverflowDataset(Dataset):
+    name = 'mathoverflow'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/mathoverflow/sx-mathoverflow.txt', usecols=(0, 1, 2), dtype=int)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+
+        m = len(histories)
+
+        print('Samples', m)
+        print('Largest choice set', max(choice_set_lengths).item())
+        print('Longest path', max(history_lengths).item() + 1)
+        print('Num nodes', len(graph.nodes))
+        print('Num edges:', len(graph.edges))
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+class FacebookWallDataset(Dataset):
+    name = 'facebook-wall'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/facebook-wosn-wall/out.facebook-wosn-wall', usecols=(0, 1, 3), dtype=int)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+
+        m = len(histories)
+
+        print('Samples', m)
+        print('Largest choice set', max(choice_set_lengths).item())
+        print('Longest path', max(history_lengths).item() + 1)
+        print('Num nodes', len(graph.nodes))
+        print('Num edges:', len(graph.edges))
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+if __name__ == '__main__':
+    FacebookWallDataset.load()
+
+
