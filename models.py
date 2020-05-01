@@ -196,18 +196,19 @@ class FeatureMNL(nn.Module):
 
     name = 'feature_mnl'
 
-    def __init__(self, num_features):
+    def __init__(self, num_features, device=torch.device('cpu')):
         super().__init__()
 
         self.num_features = num_features
         self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
+        self.device = device
 
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
 
         utilities = (self.weights * choice_set_features).sum(-1)
 
-        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
+        utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
         return nn.functional.log_softmax(utilities, 1)
 
     def loss(self, y_pred, y):
@@ -225,12 +226,13 @@ class FeatureCDM(nn.Module):
 
     name = 'feature_cdm'
 
-    def __init__(self, num_features):
+    def __init__(self, num_features, device=torch.device('cpu')):
         super().__init__()
 
         self.num_features = num_features
         self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
         self.contexts = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
+        self.device = device
 
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
@@ -241,7 +243,7 @@ class FeatureCDM(nn.Module):
 
         utilities = ((context_feature_sums * context_times_feature).sum(-1)) / choice_set_lengths[:, None] + (self.weights * choice_set_features).sum(-1)
 
-        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
+        utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
         return nn.functional.log_softmax(utilities, 1)
 
     def loss(self, y_pred, y):
@@ -343,6 +345,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
         device = torch.device('CPU')
         print('Running on CPU')
 
+    model.device = device
     model.to(device)
 
     if 'history' in model.name:
