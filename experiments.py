@@ -190,10 +190,10 @@ if __name__ == '__main__':
     torch.random.manual_seed(0)
     np.random.seed(0)
 
-    model = run_feature_model(FeatureMNL, FacebookWallDataset, 0.002, 0)
+    model = run_feature_model(FeatureMNL, MathOverflowDataset, 0.001, 0)
     print(model.weights)
 
     torch.random.manual_seed(0)
     np.random.seed(0)
-    model = run_feature_model(FeatureCDM, FacebookWallDataset, 0.002, 0)
+    model = run_feature_model(FeatureCDM, MathOverflowDataset, 0.001, 0)
     print(model.weights, model.contexts)

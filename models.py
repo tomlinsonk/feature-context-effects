@@ -346,6 +346,8 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, amsgrad=True, weight_decay=weight_decay)
 
+    model.cuda()
+
     train_losses = []
     train_accs = []
     val_losses = []
