@@ -31,9 +31,11 @@ def run_model(method, dataset, dim, lr, wd, beta=None, learn_beta=None):
 def run_feature_model(method, dataset, lr, wd):
     graph, train_data, val_data, test_data = dataset.load()
 
+    all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
+
     print(f'Training {method.name} on {dataset.name} (lr={lr}, wd={wd})')
 
-    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](train_data[3:], val_data[3:], 3, lr=lr, weight_decay=wd)
+    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](all_data, val_data, 3, lr=lr, weight_decay=wd, compute_val_stats=False)
     torch.save(model.state_dict(), f'{method.name}_{dataset.name}_params_{lr}_{wd}.pt')
     with open(f'{method.name}_{dataset.name}_losses_{lr}_{wd}.pickle', 'wb') as f:
         pickle.dump((train_losses, train_accs, val_losses, val_accs), f)
@@ -174,7 +176,7 @@ def run_triadic_closure_baselines(dataset):
 
     print('Max outdegree:', correct / total)
 
-    # Randopm
+    # Random
     total = 0
     correct = 0
     for i in range(len(histories)):
@@ -186,14 +188,22 @@ def run_triadic_closure_baselines(dataset):
     print('Random:', correct / total)
 
 
-if __name__ == '__main__':
+def run_likelihood_ratio_test(dataset, lr):
     torch.random.manual_seed(0)
     np.random.seed(0)
 
-    model = run_feature_model(FeatureMNL, MathOverflowDataset, 0.001, 0)
+    model = run_feature_model(FeatureMNL, dataset, lr, 0)
     print(model.weights)
 
     torch.random.manual_seed(0)
     np.random.seed(0)
-    model = run_feature_model(FeatureCDM, MathOverflowDataset, 0.001, 0)
+    model = run_feature_model(FeatureCDM, dataset, lr, 0)
     print(model.weights, model.contexts)
+
+
+if __name__ == '__main__':
+    run_likelihood_ratio_test(EmailEnronDataset, 0.001)
+    run_likelihood_ratio_test(EmailEUDataset, 0.001)
+    run_likelihood_ratio_test(CollegeMsgDataset, 0.001)
+    run_likelihood_ratio_test(MathOverflowDataset, 0.001)
+    run_likelihood_ratio_test(FacebookWallDataset, 0.001)

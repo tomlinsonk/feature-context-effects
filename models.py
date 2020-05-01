@@ -337,7 +337,7 @@ def toy_example():
     print(model.beta)
 
 
-def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
+def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute_val_stats=True):
     # if torch.cuda.is_available():
     #     device = torch.device('cuda:0')
     #     print('Running on GPU')
@@ -359,6 +359,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
 
     batch_size = 128
     train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, device=device)
+
     val_data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, device=device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, amsgrad=True, weight_decay=weight_decay)
@@ -371,12 +372,16 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
         train_loss = 0
         train_count = 0
         train_correct = 0
+        total_loss = 0
+
         for batch in train_data_loader:
             choices = batch[-1]
             model.train()
             choice_pred = model(*batch[:-1])
 
             loss = model.loss(choice_pred, choices)
+
+            total_loss += nn.functional.nll_loss(choice_pred, choices, reduction='sum').item()
 
             optimizer.zero_grad()
             loss.backward()
@@ -395,31 +400,33 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
         train_accs.append(train_correct / train_count)
         train_losses.append(train_loss / train_count)
 
-        total_val_loss = 0
-        val_loss = 0
-        val_count = 0
-        val_correct = 0
-        val_top5 = 0
-        model.eval()
-        for batch in val_data_loader:
-            choices = batch[-1]
-            choice_pred = model(*batch[:-1])
-            loss = model.loss(choice_pred, choices)
-            vals, idxs = choice_pred.max(1)
-            val_correct += (idxs == choices).long().sum().item() / choice_pred.size(0)
-            val_loss += loss.item()
+        print(f'{epoch}: {total_loss}')
 
-            total_val_loss += nn.functional.nll_loss(choice_pred, choices, reduction='sum').item()
+        if compute_val_stats:
+            total_val_loss = 0
+            val_loss = 0
+            val_count = 0
+            val_correct = 0
+            val_top5 = 0
+            model.eval()
+            for batch in val_data_loader:
+                choices = batch[-1]
+                choice_pred = model(*batch[:-1])
+                loss = model.loss(choice_pred, choices)
+                vals, idxs = choice_pred.max(1)
+                val_correct += (idxs == choices).long().sum().item() / choice_pred.size(0)
+                val_loss += loss.item()
 
-            vals, idxs = torch.topk(choice_pred, 10, dim=1)
-            val_top5 += (idxs == choices[:, None]).long().sum().item() / choice_pred.size(0)
-            val_count += 1
+                total_val_loss += nn.functional.nll_loss(choice_pred, choices, reduction='sum').item()
 
-        val_losses.append(val_loss / val_count)
-        val_accs.append(val_correct / val_count)
+                vals, idxs = torch.topk(choice_pred, 10, dim=1)
+                val_top5 += (idxs == choices[:, None]).long().sum().item() / choice_pred.size(0)
+                val_count += 1
 
-        print(f'{epoch}: {train_losses[-1]:.3f}, {val_losses[-1]:.3f}, {total_val_loss}, {val_accs[-1]}')
-        # print(model.contexts.detach().numpy())
+            val_losses.append(val_loss / val_count)
+            val_accs.append(val_correct / val_count)
+
+            # print(model.contexts.detach().numpy())
 
     return model, train_losses, train_accs, val_losses, val_accs
 
@@ -434,14 +441,14 @@ def train_history_mnl(n, train_data, val_data, dim=64, beta=0.5, lr=1e-4, weight
     return train_model(model, train_data, val_data, lr, weight_decay)
 
 
-def train_feature_mnl(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4):
+def train_feature_mnl(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
     model = FeatureMNL(num_features)
-    return train_model(model, train_data, val_data, lr, weight_decay)
+    return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 
-def train_feature_cdm(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4):
+def train_feature_cdm(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
     model = FeatureCDM(num_features)
-    return train_model(model, train_data, val_data, lr, weight_decay)
+    return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 
 def train_lstm(n, train_data, val_data, dim=64, lr=1e-4, weight_decay=1e-4, beta=None, learn_beta=None):
