@@ -11,7 +11,7 @@ class DataLoader:
     Simplified, faster DataLoader.
     From https://github.com/arjunsesh/cdm-icml with minor tweaks.
     """
-    def __init__(self, data, batch_size=None, shuffle=False, sort_batch=False, sort_index=None, gpu=False):
+    def __init__(self, data, batch_size=None, shuffle=False, sort_batch=False, sort_index=None, device=torch.device('cpu')):
         self.data = data
         self.data_size = data[0].shape[0]
         self.batch_size = batch_size
@@ -20,6 +20,7 @@ class DataLoader:
         self.stop_iteration = False
         self.sort_batch = sort_batch
         self.sort_index = sort_index
+        self.device = device
 
     def __iter__(self):
         return self
@@ -36,7 +37,7 @@ class DataLoader:
             i = self.counter
             bs = self.batch_size
             self.counter += 1
-            batch = [item[i * bs:(i + 1) * bs] for item in self.data]
+            batch = [item[i * bs:(i + 1) * bs].to(self.device) for item in self.data]
             if self.counter * bs >= self.data_size:
                 self.counter = 0
                 self.stop_iteration = True
@@ -47,7 +48,7 @@ class DataLoader:
 
             if self.sort_batch:
                 perm = torch.argsort(batch[self.sort_index], dim=0, descending=True)
-                batch = [item[perm] for item in batch]
+                batch = [item[perm].to(self.device) for item in batch]
 
             return batch
 
@@ -199,7 +200,7 @@ class FeatureMNL(nn.Module):
         super().__init__()
 
         self.num_features = num_features
-        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True).cuda()
+        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
 
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
@@ -228,8 +229,8 @@ class FeatureCDM(nn.Module):
         super().__init__()
 
         self.num_features = num_features
-        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True).cuda()
-        self.contexts = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True).cuda()
+        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
+        self.contexts = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
 
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
@@ -335,18 +336,25 @@ def toy_example():
 
 
 def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
+    if torch.cuda.is_available():
+        device = torch.device('cuda:0')
+        print('Running on GPU')
+    else:
+        device = torch.device('CPU')
+        print('Running on CPU')
+
+    model.to(device)
+
     if 'history' in model.name:
         print(f'Training {model.name} dim={model.dim}, lr={lr}, wd={weight_decay}, beta={model.beta.item()}, learn_beta={model.learn_beta}...')
     else:
         print(f'Training {model.name}, lr={lr}, wd={weight_decay}...')
 
     batch_size = 128
-    train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-    val_data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False)
+    train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, device=device)
+    val_data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, device=device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, amsgrad=True, weight_decay=weight_decay)
-
-    model.cuda()
 
     train_losses = []
     train_accs = []
@@ -357,9 +365,9 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
         train_count = 0
         train_correct = 0
         for batch in train_data_loader:
-            choices = batch[-1].cuda()
+            choices = batch[-1]
             model.train()
-            choice_pred = model(*[item.cuda() for item in batch[:-1]])
+            choice_pred = model(batch[:-1])
 
             loss = model.loss(choice_pred, choices)
 
@@ -387,8 +395,8 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
         val_top5 = 0
         model.eval()
         for batch in val_data_loader:
-            choices = batch[-1].cuda()
-            choice_pred = model(*[item.cuda() for item in batch[:-1]])
+            choices = batch[-1]
+            choice_pred = model(*batch[:-1])
             loss = model.loss(choice_pred, choices)
             vals, idxs = choice_pred.max(1)
             val_correct += (idxs == choices).long().sum().item() / choice_pred.size(0)
