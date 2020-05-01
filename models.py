@@ -338,12 +338,16 @@ def toy_example():
 
 
 def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
-    if torch.cuda.is_available():
-        device = torch.device('cuda:0')
-        print('Running on GPU')
-    else:
-        device = torch.device('cpu')
-        print('Running on CPU')
+    # if torch.cuda.is_available():
+    #     device = torch.device('cuda:0')
+    #     print('Running on GPU')
+    # else:
+    #     device = torch.device('cpu')
+    #     print('Running on CPU')
+
+    device = torch.device('cpu')
+    torch.set_num_threads(40)
+    print('Running on CPU')
 
     model.device = device
     model.to(device)
@@ -353,7 +357,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
     else:
         print(f'Training {model.name}, lr={lr}, wd={weight_decay}...')
 
-    batch_size = None
+    batch_size = 128
     train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, device=device)
     val_data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, device=device)
 
