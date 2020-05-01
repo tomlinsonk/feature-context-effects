@@ -367,7 +367,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
         for batch in train_data_loader:
             choices = batch[-1]
             model.train()
-            choice_pred = model(batch[:-1])
+            choice_pred = model(*batch[:-1])
 
             loss = model.loss(choice_pred, choices)
 
