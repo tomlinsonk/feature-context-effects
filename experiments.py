@@ -202,8 +202,8 @@ def run_likelihood_ratio_test(dataset, lr):
 
 
 if __name__ == '__main__':
-    run_likelihood_ratio_test(EmailEnronDataset, 0.001)
-    run_likelihood_ratio_test(EmailEUDataset, 0.001)
-    run_likelihood_ratio_test(CollegeMsgDataset, 0.001)
-    run_likelihood_ratio_test(MathOverflowDataset, 0.001)
-    run_likelihood_ratio_test(FacebookWallDataset, 0.001)
+    run_likelihood_ratio_test(EmailEnronDataset, 0.005)
+    run_likelihood_ratio_test(EmailEUDataset, 0.005)
+    run_likelihood_ratio_test(CollegeMsgDataset, 0.005)
+    run_likelihood_ratio_test(MathOverflowDataset, 0.005)
+    run_likelihood_ratio_test(FacebookWallDataset, 0.005)
