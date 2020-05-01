@@ -32,7 +32,7 @@ class DataLoader:
 
         if self.batch_size is None or self.batch_size == self.data_size:
             self.stop_iteration = True
-            return self.data
+            return [item.to(self.device) for item in self.data]
         else:
             i = self.counter
             bs = self.batch_size
