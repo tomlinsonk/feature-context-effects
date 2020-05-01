@@ -245,7 +245,7 @@ def plot_dataset_stats():
 
 
 def examine_email_enron():
-    graph, train_data, val_data, test_data = FacebookWallDataset.load()
+    graph, train_data, val_data, test_data = EmailEnronDataset.load()
     histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [
         torch.cat([train_data[i], val_data[i], test_data[i]]).numpy() for i in range(len(train_data))]
     # histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [x.numpy() for x in train_data]
@@ -276,7 +276,8 @@ def examine_email_enron():
 
         in_degree_ratios.append(choice_set[choice, 0] / np.mean(choice_set[:, 0]))
         out_degree_ratios.append(choice_set[choice, 1] / np.mean(choice_set[:, 1]))
-        reciprocity_ratios.append(torch.nn.functional.softmax(torch.tensor(choice_set[:, 2]), dim=0)[choice].item() * choice_set_lengths[i])
+        # reciprocity_ratios.append(torch.nn.functional.softmax(torch.tensor(choice_set[:, 2]), dim=0)[choice].item() * choice_set_lengths[i])
+        reciprocity_ratios.append(choice_set[choice, 2] / np.mean(choice_set[:, 2]))
 
         chosen_in_degrees.append(choice_set[choice, 0])
         chosen_out_degrees.append(choice_set[choice, 1])
@@ -349,7 +350,7 @@ def examine_email_enron():
     cbar = fig.colorbar(scatterplot, ax=axes, location='top', shrink=0.3)
     cbar.set_label('log Choice Set Size')
 
-    plt.savefig(f'facebook-wall-log_probs.png', bbox_inches='tight', dpi=200)
+    plt.savefig(f'email-enron-log_probs-2.png', bbox_inches='tight', dpi=200)
     plt.close()
 
     # model = load_feature_model(FeatureCDM, 3, 'feature_cdm_mathoverflow_params_0.01_0.pt')

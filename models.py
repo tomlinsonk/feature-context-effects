@@ -11,7 +11,7 @@ class DataLoader:
     Simplified, faster DataLoader.
     From https://github.com/arjunsesh/cdm-icml with minor tweaks.
     """
-    def __init__(self, data, batch_size=None, shuffle=False, sort_batch=False, sort_index=None):
+    def __init__(self, data, batch_size=None, shuffle=False, sort_batch=False, sort_index=None, gpu=False):
         self.data = data
         self.data_size = data[0].shape[0]
         self.batch_size = batch_size
@@ -357,9 +357,9 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
         train_count = 0
         train_correct = 0
         for batch in train_data_loader:
-            choices = batch[-1]
+            choices = batch[-1].cuda()
             model.train()
-            choice_pred = model(*batch[:-1])
+            choice_pred = model(*[item.cuda() for item in batch[:-1]])
 
             loss = model.loss(choice_pred, choices)
 
@@ -387,8 +387,8 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4):
         val_top5 = 0
         model.eval()
         for batch in val_data_loader:
-            choices = batch[-1]
-            choice_pred = model(*batch[:-1])
+            choices = batch[-1].cuda()
+            choice_pred = model(*[item.cuda() for item in batch[:-1]])
             loss = model.loss(choice_pred, choices)
             vals, idxs = choice_pred.max(1)
             val_correct += (idxs == choices).long().sum().item() / choice_pred.size(0)
