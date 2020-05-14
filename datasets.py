@@ -61,11 +61,12 @@ class Dataset(ABC):
         graph, train_data, val_data, test_data = cls.load()
 
         data = [torch.cat([train_data[i], val_data[i], test_data[i]]).numpy() for i in range(len(train_data))]
-        histories, history_lengths, choice_sets, choice_set_lengths, choices = data
+        histories, history_lengths, choice_sets, _, choice_set_lengths, choices = data
 
         print(f'Stats for {cls.name} dataset:')
         print(f'\tNodes: {len(graph.nodes)}')
         print(f'\tEdges: {len(graph.edges)}')
+        print(f'\tSamples: {len(histories)}')
         print(f'\tLongest Path: {max(history_lengths) + 1}')
         print(f'\tLargest Choice Set: {max(choice_set_lengths)}')
 
@@ -158,12 +159,13 @@ class Dataset(ABC):
                         else:
                             break
                     if len(length_2_paths) > 0:
+                        sender_neighbors = set(graph.successors(sender)).union(set(graph.predecessors(sender)))
                         intermediate = random.choice(length_2_paths)[1]
                         choice_set = [node for node in graph.neighbors(intermediate) if
                                       not graph.has_edge(sender, node)]
-                        choice_set_features = [[max(0, np.log(graph.in_degree(node))),
-                                                max(0, np.log(graph.out_degree(node))),
-                                                int(graph.has_edge(node, sender))]
+                        choice_set_features = [[np.log(graph.in_degree(node)),
+                                                np.log(len(set(graph.successors(node)).union(set(graph.predecessors(node))).intersection(sender_neighbors))),
+                                                0 if not graph.has_edge(node, sender) else np.log(1+graph[node][sender]['weight'])]
                                                for node in choice_set]
 
                         choice_sets.append(choice_set)
@@ -176,7 +178,10 @@ class Dataset(ABC):
                 except nx.NetworkXNoPath:
                     pass
 
-            graph.add_edge(sender, recipient)
+            if graph.has_edge(sender, recipient):
+                graph[sender][recipient]['weight'] = graph[sender][recipient]['weight'] + 1
+            else:
+                graph.add_edge(sender, recipient, weight=1)
 
         longest_history = max(len(history) for history in histories)
         largest_choice_set = max(len(choice_set) for choice_set in choice_sets)
@@ -413,6 +418,40 @@ class EmailEnronDataset(Dataset):
             pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
 
 
+class EmailEnronCoreDataset(Dataset):
+    name = 'email-enron-core'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/email-Enron/email-Enron.txt', usecols=(0, 1, 2), dtype=int)
+
+        filtered_edges = []
+        for sender, recipient, timestamp in timestamped_edges:
+            if sender <= 148 and recipient <= 148:
+                filtered_edges.append([sender, recipient, timestamp])
+
+        timestamped_edges = np.array(filtered_edges)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+        m = len(histories)
+
+        print('Samples', m)
+        print('Largest choice set', max(choice_set_lengths).item())
+        print('Longest path', max(history_lengths).item() + 1)
+        print('Num nodes', len(graph.nodes))
+        print('Num edges:', len(graph.edges))
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
 class CollegeMsgDataset(Dataset):
     name = 'college-msg'
 
@@ -525,7 +564,151 @@ class FacebookWallDataset(Dataset):
             pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
 
 
+class EmailW3CDataset(Dataset):
+    name = 'email-W3C'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/email-W3C/email-W3C.txt', usecols=(0, 1, 2)).astype(int)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+        m = len(histories)
+
+        print('Samples', m)
+        print('Largest choice set', max(choice_set_lengths).item())
+        print('Longest path', max(history_lengths).item() + 1)
+        print('Num nodes', len(graph.nodes))
+        print('Num edges:', len(graph.edges))
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+class EmailW3CCoreDataset(Dataset):
+    name = 'email-W3C-core'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/email-W3C/email-W3C.txt', usecols=(0, 1, 2)).astype(int)
+        core = set(np.loadtxt(f'{DATA_DIR}/email-W3C/core-email-W3C.txt', dtype=int))
+
+        filtered_edges = []
+        for sender, recipient, timestamp in timestamped_edges:
+            if sender in core and recipient in core:
+                filtered_edges.append([sender, recipient, timestamp])
+
+        timestamped_edges = np.array(filtered_edges)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+        m = len(histories)
+
+        print('Samples', m)
+        print('Largest choice set', max(choice_set_lengths).item())
+        print('Longest path', max(history_lengths).item() + 1)
+        print('Num nodes', len(graph.nodes))
+        print('Num edges:', len(graph.edges))
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+class SMSADataset(Dataset):
+    name = 'sms-a'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/sms/SD01.txt', usecols=(0, 1, 2)).astype(int)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+        m = len(histories)
+
+        print('Samples', m)
+        print('Largest choice set', max(choice_set_lengths).item())
+        print('Longest path', max(history_lengths).item() + 1)
+        print('Num nodes', len(graph.nodes))
+        print('Num edges:', len(graph.edges))
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+class SMSBDataset(Dataset):
+    name = 'sms-b'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/sms/SD02.txt', usecols=(0, 1, 2)).astype(int)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+        m = len(histories)
+
+        print('Samples', m)
+        print('Largest choice set', max(choice_set_lengths).item())
+        print('Longest path', max(history_lengths).item() + 1)
+        print('Num nodes', len(graph.nodes))
+        print('Num edges:', len(graph.edges))
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+class SMSCDataset(Dataset):
+    name = 'sms-c'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/sms/SD03.txt', usecols=(0, 1, 2)).astype(int)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+        m = len(histories)
+
+        print('Samples', m)
+        print('Largest choice set', max(choice_set_lengths).item())
+        print('Longest path', max(history_lengths).item() + 1)
+        print('Num nodes', len(graph.nodes))
+        print('Num edges:', len(graph.edges))
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
 if __name__ == '__main__':
-    FacebookWallDataset.load()
+    SMSADataset.print_stats()
+    SMSBDataset.print_stats()
+    SMSCDataset.print_stats()
 
 

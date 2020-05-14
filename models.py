@@ -1,9 +1,19 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch import nn
+from torch import nn, jit
 from torch.nn.utils.rnn import pack_padded_sequence
 from tqdm import tqdm
+
+
+# From https://github.com/pytorch/pytorch/issues/31829
+@jit.script
+def logsumexp(x: torch.Tensor, dim: int) -> torch.Tensor:
+    m, _ = x.max(dim=dim)
+    mask = m == -float('inf')
+
+    s = (x - m.masked_fill_(mask, 0).unsqueeze(dim=dim)).exp().sum(dim=dim)
+    return s.masked_fill_(mask, 1).log() + m.masked_fill_(mask, -float('inf'))
 
 
 class DataLoader:
@@ -232,6 +242,7 @@ class FeatureCDM(nn.Module):
         self.num_features = num_features
         self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
         self.contexts = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
+
         self.device = device
 
     def forward(self, choice_set_features, choice_set_lengths):
@@ -245,6 +256,55 @@ class FeatureCDM(nn.Module):
 
         utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
         return nn.functional.log_softmax(utilities, 1)
+
+    def loss(self, y_pred, y):
+        """
+        The error in inferred log-probabilities given observations
+        :param y_pred: log(choice probabilities)
+        :param y: observed choices
+        :return: the loss
+        """
+
+        return nn.functional.nll_loss(y_pred, y) + 0.01 * self.contexts.norm(1)
+
+
+class FeatureContextMixture(nn.Module):
+
+    name = 'feature_context_mixture'
+
+    def __init__(self, num_features, device=torch.device('cpu')):
+        super().__init__()
+
+        self.num_features = num_features
+        self.slopes = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
+        self.intercepts = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
+        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
+
+        self.device = device
+
+    def forward(self, choice_set_features, choice_set_lengths):
+        batch_size, max_choice_set_len, num_feats = choice_set_features.size()
+
+        # Compute mean of each feature over each choice set
+        mean_choice_set_features = choice_set_features.sum(1) / choice_set_lengths[:, None]
+
+        # Use learned linear context model to compute utility matrices for each sample
+        utility_matrices = self.intercepts + self.slopes * (torch.ones(self.num_features, 1) @ mean_choice_set_features[:, None, :])
+
+        # Compute utility of each item under each feature MNL
+        utilities = choice_set_features @ utility_matrices
+        utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
+
+        # Compute MNL log-probs for each feature
+        log_probs = nn.functional.log_softmax(utilities, 1)
+
+        # Combine the MNLs into single probability using weights
+        # This is what I want to do, but logsumexp produces nan gradients when there are -infs
+        # https://github.com/pytorch/pytorch/issues/31829
+        # return torch.logsumexp(log_probs + torch.log(self.weights / self.weights.sum()), 2)
+
+        # So, I'm instead using the fix in the issue linked above
+        return logsumexp(log_probs + torch.log_softmax(self.weights, 0), 2)
 
     def loss(self, y_pred, y):
         """
@@ -347,15 +407,15 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
 
     device = torch.device('cpu')
     torch.set_num_threads(10)
-    print('Running on CPU')
+    # print('Running on CPU')
 
     model.device = device
     model.to(device)
 
-    if 'history' in model.name:
-        print(f'Training {model.name} dim={model.dim}, lr={lr}, wd={weight_decay}, beta={model.beta.item()}, learn_beta={model.learn_beta}...')
-    else:
-        print(f'Training {model.name}, lr={lr}, wd={weight_decay}...')
+    # if 'history' in model.name:
+    #     print(f'Training {model.name} dim={model.dim}, lr={lr}, wd={weight_decay}, beta={model.beta.item()}, learn_beta={model.learn_beta}...')
+    # else:
+    #     print(f'Training {model.name}, lr={lr}, wd={weight_decay}...')
 
     batch_size = 128
     train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, device=device)
@@ -368,6 +428,8 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
     train_accs = []
     val_losses = []
     val_accs = []
+    prev_total_loss = np.inf
+
     for epoch in range(100):
         train_loss = 0
         train_count = 0
@@ -401,6 +463,10 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
         train_losses.append(train_loss / train_count)
 
         print(f'{epoch}: {total_loss}')
+        if prev_total_loss - total_loss < prev_total_loss * 0.00001 or total_loss < 0.001:
+            break
+        prev_total_loss = total_loss
+        # print(model.contexts.detach().numpy())
 
         if compute_val_stats:
             total_val_loss = 0
@@ -426,8 +492,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
             val_losses.append(val_loss / val_count)
             val_accs.append(val_correct / val_count)
 
-            # print(model.contexts.detach().numpy())
-
+    print('Total loss:', total_loss)
     return model, train_losses, train_accs, val_losses, val_accs
 
 
@@ -448,6 +513,11 @@ def train_feature_mnl(train_data, val_data, num_features, lr=1e-4, weight_decay=
 
 def train_feature_cdm(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
     model = FeatureCDM(num_features)
+    return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
+
+
+def train_feature_context_mixture(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
+    model = FeatureContextMixture(num_features)
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 

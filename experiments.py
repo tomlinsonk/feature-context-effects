@@ -7,12 +7,13 @@ import torch
 import matplotlib.pyplot as plt
 
 from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
-    EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset
+    EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
+    EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
-    FeatureMNL, FeatureCDM, train_feature_cdm
+    FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture
 
 training_methods = {HistoryCDM: train_history_cdm, HistoryMNL: train_history_mnl, LSTM: train_lstm, FeatureMNL: train_feature_mnl,
-                    FeatureCDM: train_feature_cdm}
+                    FeatureCDM: train_feature_cdm, FeatureContextMixture: train_feature_context_mixture}
 
 
 def run_model(method, dataset, dim, lr, wd, beta=None, learn_beta=None):
@@ -197,13 +198,22 @@ def run_likelihood_ratio_test(dataset, lr):
 
     torch.random.manual_seed(0)
     np.random.seed(0)
+
+    model = run_feature_model(FeatureContextMixture, dataset, lr, 0)
+    print(model.weights, model.intercepts, model.slopes)
+
+    torch.random.manual_seed(0)
+    np.random.seed(0)
     model = run_feature_model(FeatureCDM, dataset, lr, 0)
     print(model.weights, model.contexts)
 
 
 if __name__ == '__main__':
-    run_likelihood_ratio_test(EmailEnronDataset, 0.005)
-    run_likelihood_ratio_test(EmailEUDataset, 0.005)
-    run_likelihood_ratio_test(CollegeMsgDataset, 0.005)
-    run_likelihood_ratio_test(MathOverflowDataset, 0.005)
+    torch.autograd.set_detect_anomaly(True)
     run_likelihood_ratio_test(FacebookWallDataset, 0.005)
+    run_likelihood_ratio_test(EmailEnronDataset, 0.005)
+    run_likelihood_ratio_test(CollegeMsgDataset, 0.005)
+    run_likelihood_ratio_test(EmailEUDataset, 0.005)
+    run_likelihood_ratio_test(SMSBDataset, 0.005)
+
+

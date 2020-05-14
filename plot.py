@@ -6,11 +6,13 @@ import numpy as np
 import torch
 import scipy.stats as stats
 import matplotlib.ticker as ticker
-
+from tqdm import tqdm
 
 from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
-    EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset
-from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM
+    EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
+    EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset
+from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
+    FeatureContextMixture
 
 
 def load_model(Model, n, dim, param_fname):
@@ -212,589 +214,240 @@ def plot_dataset_stats():
             axes[row, col].set_ylim(0.5)
 
 
-        # for col, method in enumerate((LSTM, HistoryMNL, HistoryCDM)):
-        #     beta_string = '' if method is LSTM else '_0.5_True'
-        #     param_fname = f'params/{method.name}_{dataset.name}_params_64_0.005_0{beta_string}.pt'
-        #     loss_fname = f'results/{method.name}_{dataset.name}_losses_64_0.005_0{beta_string}.pickle'
-        #     print(method, param_fname)
-        #
-        #     if row == 0:
-        #
-        #
-        #
-        #
-        #     if not os.path.isfile(param_fname):
-        #         continue
-        #
-        #     model = load_model(method, n, 64, param_fname)
-        #
-        #     acc, mean_rank, mrr = test_model(model, dataset, loaded_data=loaded_data)
-        #
-        #     with open(loss_fname, 'rb') as f:
-        #         losses = pickle.load(f)
-        #
-        #     axes[row, col].plot(range(500), losses)
-        #
-        #     axes[row, col].annotate(f'Val. acc: {acc:.2f}',
-        #                             xy=(0.9, 0.8), xycoords='axes fraction', fontsize=10,
-        #                             ha='right')
-
     axes[0, 0].legend(loc='lower center', bbox_to_anchor=(0.5, 1.02))
     axes[0, 1].legend(loc='lower center', bbox_to_anchor=(0.5, 1.02))
     plt.show()
 
 
-def examine_email_enron():
-    graph, train_data, val_data, test_data = EmailEnronDataset.load()
+def compile_choice_data(dataset):
+    graph, train_data, val_data, test_data = dataset.load()
+
     histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [
         torch.cat([train_data[i], val_data[i], test_data[i]]).numpy() for i in range(len(train_data))]
-    # histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [x.numpy() for x in train_data]
-
-
 
     in_degree_ratios = []
-    out_degree_ratios = []
+    shared_neighbors_ratios = []
     reciprocity_ratios = []
 
     chosen_in_degrees = []
-    chosen_out_degrees = []
+    chosen_shared_neighbors = []
     chosen_reciprocities = []
 
     mean_available_in_degrees = []
-    mean_available_out_degrees = []
+    mean_available_shared_neighbors = []
     mean_available_reciprocities = []
 
     for i in range(len(choice_set_features)):
         choice = choices[i]
         choice_set = choice_set_features[i, :choice_set_lengths[i]]
 
-        mean_available_reciprocities.append(np.mean(choice_set[:, 2]))
-
         # Convert reciprocities to -1/1 and log-degrees to degrees
-        choice_set[:, 0] = np.exp(choice_set[:, 0])
-        choice_set[:, 1] = np.exp(choice_set[:, 1])
+        # choice_set[:, 0] = np.exp(choice_set[:, 0])
+        # choice_set[:, 1] = np.exp(choice_set[:, 1])
 
         in_degree_ratios.append(choice_set[choice, 0] / np.mean(choice_set[:, 0]))
-        out_degree_ratios.append(choice_set[choice, 1] / np.mean(choice_set[:, 1]))
+        shared_neighbors_ratios.append(choice_set[choice, 1] / np.mean(choice_set[:, 1]))
         # reciprocity_ratios.append(torch.nn.functional.softmax(torch.tensor(choice_set[:, 2]), dim=0)[choice].item() * choice_set_lengths[i])
-        reciprocity_ratios.append(choice_set[choice, 2] / np.mean(choice_set[:, 2]))
+
+        reciprocity_ratios.append((choice_set[choice, 2] / np.mean(choice_set[:, 2])) if np.mean(choice_set[:, 2]) > 0 else 1)
 
         chosen_in_degrees.append(choice_set[choice, 0])
-        chosen_out_degrees.append(choice_set[choice, 1])
+        chosen_shared_neighbors.append(choice_set[choice, 1])
         chosen_reciprocities.append(choice_set[choice, 2])
 
-        mean_available_in_degrees.append(np.mean(choice_set[:, 0]))
-        mean_available_out_degrees.append(np.mean(choice_set[:, 1]))
+        mean_available_in_degrees.append(np.mean(np.exp(choice_set[:, 0])))
+        mean_available_shared_neighbors.append(np.mean(np.exp(choice_set[:, 1])))
+        mean_available_reciprocities.append(np.mean(choice_set[:, 2]))
+
 
     in_degree_ratios = np.array(in_degree_ratios)
-    out_degree_ratios = np.array(out_degree_ratios)
+    shared_neighbors_ratios = np.array(shared_neighbors_ratios)
     reciprocity_ratios = np.array(reciprocity_ratios)
 
     chosen_in_degrees = np.array(chosen_in_degrees)
-    chosen_out_degrees = np.array(chosen_out_degrees)
+    chosen_shared_neighbors = np.array(chosen_shared_neighbors)
     chosen_reciprocities = np.array(chosen_reciprocities)
 
     mean_available_in_degrees = np.array(mean_available_in_degrees)
-    mean_available_out_degrees = np.array(mean_available_out_degrees)
+    mean_available_shared_neighbors = np.array(mean_available_shared_neighbors)
     mean_available_reciprocities = np.array(mean_available_reciprocities)
+
+    return in_degree_ratios, shared_neighbors_ratios, reciprocity_ratios, chosen_in_degrees, chosen_shared_neighbors, \
+        chosen_reciprocities, mean_available_in_degrees, mean_available_shared_neighbors, mean_available_reciprocities, choice_set_lengths, \
+        histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices
+
+
+def learn_binned_mnl(dataset):
+    print(f'Learning binned MNLs for {dataset.name}')
+    num_bins = 100
+
+    in_degree_ratios, out_degree_ratios, reciprocity_ratios, chosen_in_degrees, chosen_out_degrees, \
+        chosen_reciprocities, mean_available_in_degrees, mean_available_shared_neighbors, mean_available_reciprocities, choice_set_lengths, \
+        histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = compile_choice_data(dataset)
+
+    data = [None, None, None]
+
+    for i, x_var in enumerate([mean_available_in_degrees, mean_available_shared_neighbors, mean_available_reciprocities]):
+        x_min = min([x for x in x_var if x > 0]) * 0.8
+        x_max = max(x_var) * 1.2
+
+        values, bins = np.histogram(x_var, bins=np.logspace(np.log(x_min), np.log(x_max), num_bins))
+
+        all_bin_idx = np.digitize(x_var, bins)
+
+        mnl_utilities = np.zeros((num_bins, 3))
+        bin_counts = np.zeros(num_bins)
+        bin_choice_set_log_lengths = np.zeros(num_bins)
+        bin_losses = np.zeros(num_bins)
+
+        for bin in tqdm(range(num_bins)):
+            bin_idx = all_bin_idx == bin
+
+            bin_counts[bin] = np.count_nonzero(bin_idx)
+
+            if bin_counts[bin] == 0:
+                continue
+
+            bin_data = [torch.tensor(choice_set_features[bin_idx]), torch.tensor(choice_set_lengths[bin_idx]), torch.tensor(choices[bin_idx])]
+            mnl, train_losses, _, _, _ = train_feature_mnl(bin_data, bin_data, 3, lr=0.01, weight_decay=0)
+            mnl_utilities[bin] = mnl.weights.detach().numpy()
+            bin_choice_set_log_lengths[bin] = np.mean(np.log(choice_set_lengths[bin_idx]))
+            bin_losses[bin] = torch.nn.functional.nll_loss(mnl(*bin_data[:-1]), bin_data[-1], reduction='sum').item()
+
+        data[i] = bins, mnl_utilities, bin_counts, bin_choice_set_log_lengths, bin_losses
+
+    with open(f'{dataset.name}_binned_mnl_params.pickle', 'wb') as f:
+        pickle.dump(data, f)
+
+
+def plot_binned_mnl(dataset, model_param_fname):
+    with open(f'{dataset.name}_binned_mnl_params.pickle', 'rb') as f:
+        data = pickle.load(f)
+
+    model = load_feature_model(FeatureContextMixture, 3, model_param_fname)
+    slopes = model.slopes.detach().numpy()
+    intercepts = model.intercepts.detach().numpy()
+    weights = model.weights.detach().numpy()
 
     plt.set_cmap('plasma')
 
     fig, axes = plt.subplots(3, 3, figsize=(10, 10), sharex='col', sharey='row')
     plt.subplots_adjust(wspace=0.1, hspace=0.1)
 
-    xlims = [(1, 100), (1, 100), (0.005, 1.2)]
+    y_mins = [np.inf, np.inf, np.inf]
+    y_maxs = [-np.inf, -np.inf, -np.inf]
 
-    num_bins = 100
+    for col, x_name in enumerate(['In-degree', 'Shared Neighbors', 'Reciprocity']):
+        bins, mnl_utilities, bin_counts, bin_choice_set_log_lengths, bin_losses = data[col]
+
+        x_min = bins[min([i for i in range(len(bins)) if bin_counts[i] > 0])]
+        x_max = bins[max([i for i in range(len(bins)) if bin_counts[i] > 0])]
+
+        for row, y_name in enumerate(['Log In-degree', 'Log Shared Neighbors', 'Reciprocity']):
+
+            scatterplot = axes[row, col].scatter(bins, mnl_utilities[:, row], alpha=1, s=bin_counts, marker='o', c=bin_choice_set_log_lengths)
+            axes[row, col].scatter(bins, mnl_utilities[:, row], alpha=1, s=1, marker='.', color='white')
+
+            transformed_bins = np.log(bins) if col < 2 else bins
+            axes[row, col].plot(bins, list(map(lambda x: intercepts[row, col] + x * slopes[row, col], transformed_bins)))
+
+            if col == 0:
+                axes[row, col].set_ylabel(f'{y_name} Utility')
+            else:
+                plt.setp(axes[row, col].get_yticklabels(), visible=False)
+
+            if row == 2:
+
+                axes[row, col].set_xlabel(f'Choice Set {x_name}')
+            elif row == 0:
+                axes[row, col].set_title(f'NLL: {bin_losses.sum():.0f}, weight: {np.exp(weights[col]) / np.exp(weights).sum():.2f}')
+
+            axes[row, col].set_xlim(x_min, x_max)
+
+            if col < 2:
+                axes[row, col].set_xscale('log')
+            else:
+                axes[row, col].set_xscale('symlog', linthreshx=0.01)
+                axes[row, col].set_xlim(-0.0001, x_max)
+
+            y_mins[row] = min(y_mins[row], min(mnl_utilities[:, row]))
+            y_maxs[row] = max(y_maxs[row], max(mnl_utilities[:, row]))
+
+    for row in range(3):
+        axes[row, 0].set_ylim(y_mins[row]-1, y_maxs[row]+1)
+
+    plt.savefig(f'{dataset.name}-mixture-fit-feature-utilities.pdf', bbox_inches='tight')
+    plt.close()
+
+
+def examine_choice_set_size_effects(dataset):
+    in_degree_ratios, out_degree_ratios, reciprocity_ratios, chosen_in_degrees, chosen_out_degrees, \
+        chosen_reciprocities, mean_available_in_degrees, mean_available_out_degrees, mean_available_reciprocities, choice_set_lengths, \
+        histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = compile_choice_data(dataset)
+
+    plt.set_cmap('plasma')
+
+    fig, axes = plt.subplots(3, 1, figsize=(4, 10))
+    plt.subplots_adjust(wspace=0.1, hspace=0.1)
 
     for j, (x_variable, x_name) in enumerate([(mean_available_in_degrees, 'In-degree'), (mean_available_out_degrees, 'Out-degree'), (mean_available_reciprocities, 'Reciprocity')]):
 
-        values, bins = np.histogram(x_variable, bins=np.logspace(np.log(xlims[j][0]), np.log(xlims[j][1]), num_bins))
+        axes[j].scatter(choice_set_lengths, x_variable, s=10, alpha=0.4, marker='.')
+        axes[j].set_ylabel(f'Mean {x_name}')
+        axes[j].set_xlabel('Choice Set Size')
+        axes[j].set_xscale('log')
 
-        idx = np.digitize(x_variable, bins)
+        if j < 2:
+            axes[j].set_yscale('log')
+        else:
+            axes[j].set_yscale('symlog', linthreshy=0.001)
 
-        for i, (y_variable, y_name) in enumerate([(in_degree_ratios, 'Chosen In-degree Ratio'), (out_degree_ratios, 'Chosen Out-degree Ratio'), (reciprocity_ratios, 'Chosen Reciprocity Ratio')]):
-            mean_y_vars = np.zeros(num_bins)
-            bin_counts = np.zeros(num_bins)
-
-            for bin in range(num_bins):
-                mean_y_vars[bin] = np.mean(y_variable[idx == bin])
-                bin_counts[bin] = np.count_nonzero(idx == bin)
-
-            log_lengths = np.log(choice_set_lengths)
-
-            scatterplot = axes[i, j].scatter(x_variable, y_variable, s=30, alpha=0.5, marker='.', linewidth=0, c=log_lengths)
-
-            axes[i, j].scatter(bins, mean_y_vars, alpha=1, s=bin_counts ** 0.8, marker='o', color='black')
-            axes[i, j].scatter(bins, mean_y_vars, alpha=1, s=1, marker='.', color='white')
-
-            if j == 0:
-                axes[i, j].set_ylabel(f'{y_name}')
-            else:
-                plt.setp(axes[i, j].get_yticklabels(), visible=False)
-
-            if i == 2:
-                axes[i, j].set_xlabel(f'Choice Set {x_name}')
-                axes[i, j].set_yscale('log')
-            else:
-                axes[i, j].set_yscale('log')
-
-            axes[i, j].set_xlim(*xlims[j])
-            axes[i, j].set_xscale('log')
-
-    # axes[2, 0].set_ylim(0.3, 3)
-    # axes[2, 0].set_yticks([0.3, 1, 3])
-    # axes[2, 0].get_yaxis().set_major_formatter(ticker.FuncFormatter(lambda y, _: '{:g}'.format(y)))
-    # axes[2, 0].get_yaxis().set_minor_formatter(ticker.NullFormatter())
-
-    cbar = fig.colorbar(scatterplot, ax=axes, location='top', shrink=0.3)
-    cbar.set_label('log Choice Set Size')
-
-    plt.savefig(f'email-enron-log_probs-2.png', bbox_inches='tight', dpi=200)
-    plt.close()
-
-    # model = load_feature_model(FeatureCDM, 3, 'feature_cdm_mathoverflow_params_0.01_0.pt')
-    # print(model.contexts, model.weights)
+    plt.savefig(f'{dataset.name}-choice-set-lengths.pdf', bbox_inches='tight')
 
 
+def simulate_reciprocity_plot():
 
+    samples = 100000
+    num_bins = 100
+    like_factor = 1
 
-# OLD PLOTTING STUFF
-#
-# def plot_all_history_cdm_losses(dataset):
-#     loaded_data = dataset.load()
-#
-#     for dim in [16, 64, 128]:
-#         plot_all_losses(loaded_data, dim, test_wikispeedia, f'results/wikispeedia_losses_{dim}*.pickle',
-#                         f'history_cdm_wikispeedia_{dim}.pdf')
-#
-#
-# def plot_all_losses(loaded_data, dim, test_method, loss_file_glob, outfile):
-#     lrs = ['0.001', '0.005', '0.01']
-#     wds = ['0', '1e-06', '0.0001']
-#
-#     fig, axes = plt.subplots(3, 3, sharex='col')
-#
-#     for fname in glob.glob(loss_file_glob):
-#         fname_split = fname.split('_')
-#         lr = fname_split[3]
-#         wd = fname_split[4].replace('.pickle', '')
-#
-#         try:
-#             row = lrs.index(lr)
-#             col = wds.index(wd)
-#         except ValueError:
-#             print('Skipping', fname)
-#             continue
-#
-#         print(lr, wd, row, col)
-#
-#         print(fname)
-#         param_fname = fname.replace('.pickle', '.pt').replace('losses', 'params').replace('results/', 'params/')
-#         acc, mean_rank, mrr = test_method(param_fname, dim, loaded_data)
-#         plot_loss(fname, axes, row, col)
-#
-#         if row == 0:
-#             axes[row, col].annotate(f'WD: {wd}', xy=(0.5, 1), xytext=(0, 5),
-#                                     xycoords='axes fraction', textcoords='offset points',
-#                                     fontsize=14, ha='center', va='baseline')
-#
-#         if col == 2:
-#             axes[row, col].annotate(f'LR: {lr}', xy=(1, 0.5), xytext=(-axes[row, col].yaxis.labelpad + 20, 0),
-#                                     xycoords='axes fraction', textcoords='offset points',
-#                                     fontsize=14, ha='right', va='center', rotation=270)
-#
-#         axes[row, col].annotate(f'Val. acc: {acc:.2f}',
-#                                 xy=(0.9, 0.8), xycoords='axes fraction', fontsize=10,
-#                                 ha='right')
-#
-#     plt.tight_layout()
-#     plt.savefig(outfile, bbox_inches='tight')
-#     plt.show()
-#
-#
-# def plot_beta_losses(outfile):
-#     loaded_data = load_wikispeedia()
-#     betas = ['0', '0.5', '1']
-#     dims = ['16', '64', '128']
-#
-#     glob_template = '{}/wikispeedia_mnl_beta_{}_{}_{}_0.005_0.{}'
-#
-#     fig, axes = plt.subplots(3, 3, sharex='col')
-#
-#     for row, beta in enumerate(betas):
-#         for col, dim in enumerate(dims):
-#             print(row, col)
-#             acc, mean_rank, mrr = test_wikispeedia(glob_template.format('params', beta, 'params', dim, 'pt'), int(dim), loaded_data, Model=HistoryMNL)
-#             plot_loss(glob_template.format('results', beta, 'losses', dim, 'pickle'), axes, row, col)
-#
-#             if row == 0:
-#                 axes[row, col].annotate(f'Dim: {dim}', xy=(0.5, 1), xytext=(0, 5),
-#                                         xycoords='axes fraction', textcoords='offset points',
-#                                         fontsize=14, ha='center', va='baseline')
-#             if col == 2:
-#                 axes[row, col].annotate(f'$\\beta={beta}$', xy=(1, 0.5), xytext=(-axes[row, col].yaxis.labelpad + 20, 0),
-#                                         xycoords='axes fraction', textcoords='offset points',
-#                                         fontsize=14, ha='right', va='center', rotation=270)
-#
-#             axes[row, col].annotate(f'Val. acc: {acc:.2f}',
-#                                     xy=(0.9, 0.8), xycoords='axes fraction', fontsize=10,
-#                                     ha='right')
-#
-#     plt.tight_layout()
-#     plt.savefig(outfile, bbox_inches='tight')
-#     plt.show()
-#
-#
-# def plot_learn_beta_losses(outfile):
-#     loaded_data = load_wikispeedia()
-#     dims = ['16', '64', '128']
-#
-#     glob_template = '{}/wikispeedia_learn_beta_{}_{}_0.005_0.{}'
-#
-#     fig, axes = plt.subplots(1, 3, sharex='col', figsize=(6, 2.5))
-#
-#     for col, dim in enumerate(dims):
-#         param_fname = glob_template.format('params', 'params', dim, 'pt')
-#         acc, mean_rank, mrr = test_wikispeedia(param_fname, int(dim), loaded_data)
-#         plot_loss(glob_template.format('results', 'losses', dim, 'pickle'), axes, None, col)
-#
-#         axes[col].annotate(f'Dim: {dim}', xy=(0.5, 1), xytext=(0, 5),
-#                                 xycoords='axes fraction', textcoords='offset points',
-#                                 fontsize=14, ha='center', va='baseline')
-#
-#         model = HistoryCDM(len(loaded_data[0].nodes), int(dim), 0.5)
-#         model.load_state_dict(torch.load(param_fname))
-#
-#         axes[col].annotate(f'Val. acc: {acc:.2f}\n$\\beta: {model.beta.item():.2f}$',
-#                            xy=(0.9, 0.8), xycoords='axes fraction', fontsize=10,
-#                            ha='right')
-#
-#
-#
-#     plt.tight_layout()
-#     plt.savefig(outfile, bbox_inches='tight')
-#     plt.show()
-#
-#
-# def load_normalized_embeddings(param_fname, n, dim):
-#     model = HistoryCDM(n, dim, 0.5)
-#     model.load_state_dict(torch.load(param_fname), strict=False)
-#     model.eval()
-#
-#     history_embedding = model.history_embedding(range(n)).detach().numpy()
-#     history_embedding = history_embedding / np.linalg.norm(history_embedding, ord=2, axis=1, keepdims=True)
-#
-#     target_embedding = model.target_embedding(range(n)).detach().numpy()
-#     target_embedding = target_embedding / np.linalg.norm(target_embedding, ord=2, axis=1, keepdims=True)
-#
-#     context_embedding = model.context_embedding(range(n)).detach().numpy()
-#     context_embedding = context_embedding / np.linalg.norm(context_embedding, ord=2, axis=1, keepdims=True)
-#
-#     return history_embedding, target_embedding, context_embedding
-#
-#
-# def analyze_embeddings(param_fname, dim):
-#     graph, train_data, val_data, test_data = load_wikispeedia()
-#     n = len(graph.nodes)
-#
-#     model = HistoryCDM(n, dim, 0.5)
-#     model.load_state_dict(torch.load(param_fname), strict=False)
-#     model.eval()
-#
-#     index_map = ['' for _ in range(n)]
-#     for node in graph.nodes:
-#         index_map[graph.nodes[node]['index']] = node
-#
-#     embeddings = load_normalized_embeddings(param_fname, n, dim)
-#     names = ['history', 'target', 'context']
-#
-#     histories, history_lengths, choice_sets, choice_set_lengths, choices = train_data
-#     choice_indices = choice_sets[torch.arange(choice_sets.size(0)), choices]
-#
-#     for i in range(3):
-#         for j in range(i, 3):
-#             for extreme, dir in ((np.inf, 'smallest'), (-np.inf, 'largest')):
-#                 products = embeddings[i] @ embeddings[j].T
-#
-#                 tri_idx = np.tril_indices(n, -1)
-#                 products[tri_idx] = extreme
-#                 np.fill_diagonal(products, extreme)
-#
-#                 flattened_indices = products.argsort(axis=None)
-#                 if dir == 'largest':
-#                     flattened_indices = flattened_indices[::-1]
-#                 array_indices = np.unravel_index(flattened_indices, products.shape)
-#
-#                 results = ''
-#
-#                 row_idx, col_idx = array_indices
-#
-#                 for k in range(100):
-#                     row = row_idx[k]
-#                     col = col_idx[k]
-#
-#                     results += f'{products[row, col]}, {index_map[row]}, {index_map[col]}\n'
-#
-#                 result_fname = os.path.basename(param_fname).replace('.pt', '.txt').replace('params', f'embeds_{names[i]}_{names[j]}_{dir}')
-#                 with open(f'{result_fname}', 'w') as f:
-#                     f.write(results)
-#
-#
-# def analyze_history_effects(param_fname, dim):
-#     graph, train_data, val_data, test_data = load_wikispeedia()
-#
-#     data = [torch.cat([train_data[i], val_data[i], test_data[i]]).numpy() for i in range(len(train_data))]
-#     histories, history_lengths, choice_sets, choice_set_lengths, choices = data
-#     choice_indices = choice_sets[np.arange(len(choice_sets)), choices]
-#
-#     n = len(graph.nodes)
-#
-#     model = HistoryCDM(n, dim, 0.5)
-#     model.load_state_dict(torch.load(param_fname), strict=False)
-#     model.eval()
-#
-#     index_map = ['' for _ in range(n)]
-#     for node in graph.nodes:
-#         index_map[graph.nodes[node]['index']] = node
-#
-#     history_embedding, target_embedding, context_embedding = load_normalized_embeddings(param_fname, n, dim)
-#     names = ['history', 'target', 'context']
-#
-#     choice_counts = np.bincount(choice_indices)
-#     in_choice_set_counts = np.bincount(choice_sets.flatten())
-#     hit_rates = np.zeros_like(choice_counts, dtype=float)
-#
-#     chosen_pages = []
-#
-#     for page in range(n):
-#         in_choice_set = in_choice_set_counts[page]
-#         chosen = choice_counts[page]
-#         # row_in_history = (histories == row).sum(1) > 0
-#         #
-#         # conditional_col_in_choice_set = (choice_sets[row_in_history] == col).sum()
-#         # conditional_col_chosen = (choice_indices[row_in_history] == col).sum()
-#         #
-#         # # print('In choice set:', col_in_choice_set)
-#         # # print('Chosen:', col_chosen)
-#         # print(index_map[page], chosen / in_choice_set if in_choice_set > 0 else 0)
-#
-#         if chosen > 0:
-#             hit_rates[page] = chosen / in_choice_set
-#             chosen_pages.append(page)
-#
-#     chosen_pages.sort(key=lambda x: hit_rates[x], reverse=True)
-#     plt.scatter(range(len(chosen_pages)), hit_rates[chosen_pages], s=10)
-#     plt.yscale('log')
-#     plt.ylim(5e-5, 1)
-#     plt.xlabel('Rank')
-#     plt.ylabel('Click rate')
-#     plt.savefig('plots/click_rate_dsn.pdf', bbox_inches='tight')
-#
-#     plt.show()
-#
-#     chosen_pages = [page for page in chosen_pages if choice_counts[page] >= 100]
-#
-#     print(len(chosen_pages), n)
-#     chosen_pages.sort(key=lambda x: hit_rates[x], reverse=True)
-#
-#     inner_prods = history_embedding @ target_embedding.T
-#
-#     rate_diffs = []
-#     hist_scores = []
-#     for page in tqdm(chosen_pages[:10]):
-#         for effect_page in chosen_pages:
-#             if page == effect_page: continue
-#
-#             in_history = (histories == effect_page).sum(1) > 0
-#             conditional_in_choice_set = np.count_nonzero(choice_sets[in_history] == page)
-#             conditional_chosen = np.count_nonzero(choice_indices[in_history] == page)
-#
-#             if conditional_in_choice_set >= 10:
-#                 rate_diffs.append((conditional_chosen / conditional_in_choice_set) - hit_rates[page])
-#                 hist_scores.append(inner_prods[effect_page, page])
-#                 # print('Cond. rate', conditional_chosen / conditional_in_choice_set, inner_prods[effect_page, page])
-#
-#     plt.scatter(rate_diffs, hist_scores, s=10, c='#13085c')
-#     plt.xlabel('Conditional click rate boost')
-#     plt.ylabel('$\\langle$history, target$\\rangle$')
-#
-#     print('Correlation:', stats.pearsonr(rate_diffs, hist_scores))
-#
-#     slope, intercept, r_value, p_value, std_err = stats.linregress(rate_diffs, hist_scores)
-#     plt.plot(np.linspace(-0.4, 0.7), slope * np.linspace(-0.4, 0.7) + intercept, c='#ffa600')
-#     print(r_value, p_value, std_err)
-#
-#     plt.savefig('plots/history_score_correlation.pdf', bbox_inches='tight')
-#
-#     plt.show()
-#
-#
-#     # chosen_pages.sort(key=lambda x: in_choice_set_counts[x], reverse=True)
-#     # for i in range(10):
-#     #     print(index_map[chosen_pages[i]], in_choice_set_counts[chosen_pages[i]])
-#     # plt.scatter(range(len(chosen_pages)), in_choice_set_counts[chosen_pages], s=10)
-#     # plt.yscale('log')
-#     # plt.xlabel('Rank')
-#     # plt.ylabel('# times in choice set')
-#     #
-#     # plt.show()
-#     #
-#     # chosen_pages.sort(key=lambda x: choice_counts[x], reverse=True)
-#     # for i in range(10):
-#     #     print(index_map[chosen_pages[i]], choice_counts[chosen_pages[i]])
-#     # plt.scatter(range(len(chosen_pages)), choice_counts[chosen_pages], s=10)
-#     # plt.yscale('log')
-#     # plt.xlabel('Rank')
-#     # plt.ylabel('# times chosen')
-#     #
-#     # plt.show()
-#
-#
-# def analyze_context_effects(param_fname, dim):
-#     graph, train_data, val_data, test_data = load_wikispeedia()
-#
-#     data = [torch.cat([train_data[i], val_data[i], test_data[i]]).numpy() for i in range(len(train_data))]
-#     histories, history_lengths, choice_sets, choice_set_lengths, choices = data
-#     choice_indices = choice_sets[np.arange(len(choice_sets)), choices]
-#
-#     n = len(graph.nodes)
-#
-#     model = HistoryCDM(n, dim, 0.5)
-#     model.load_state_dict(torch.load(param_fname), strict=False)
-#     model.eval()
-#
-#     index_map = ['' for _ in range(n)]
-#     for node in graph.nodes:
-#         index_map[graph.nodes[node]['index']] = node
-#
-#     history_embedding, target_embedding, context_embedding = load_normalized_embeddings(param_fname, n, dim)
-#
-#     choice_counts = np.bincount(choice_indices)
-#     in_choice_set_counts = np.bincount(choice_sets.flatten())
-#     hit_rates = np.zeros_like(choice_counts, dtype=float)
-#     for page in range(n):
-#         in_choice_set = in_choice_set_counts[page]
-#         chosen = choice_counts[page]
-#
-#         if chosen > 0:
-#             hit_rates[page] = chosen / in_choice_set
-#
-#     top_20 = np.argsort(choice_counts)[-20:][::-1]
-#     dot_prods = context_embedding[top_20] @ target_embedding[top_20].T
-#     np.fill_diagonal(dot_prods, 0)
-#
-#     page_names = [index_map[idx].replace('_', ' ') for idx in top_20]
-#     sns.heatmap(dot_prods, center=0, xticklabels=page_names, yticklabels=page_names, linewidths=.5, cmap='RdBu_r')
-#     plt.xlabel('Target Embeddings')
-#     plt.ylabel('Context Embeddings')
-#     plt.savefig('top_20_context_effects.pdf', bbox_inches='tight')
-#     plt.show()
-#
-#     hit_rate_diffs = np.zeros_like(dot_prods, dtype=float)
-#
-#     for i, context_page in tqdm(enumerate(top_20), total=20):
-#         for j, target_page in enumerate(top_20):
-#             if context_page == target_page: continue
-#
-#             in_set = (choice_sets == context_page).sum(1) > 0
-#             conditional_in_choice_set = np.count_nonzero(choice_sets[in_set] == target_page)
-#             conditional_chosen = np.count_nonzero(choice_indices[in_set] == target_page)
-#
-#             conditional_hit_rate = 0 if conditional_in_choice_set == 0 else conditional_chosen / conditional_in_choice_set
-#
-#             hit_rate_diffs[i, j] = conditional_hit_rate - hit_rates[target_page]
-#
-#     sns.heatmap(hit_rate_diffs, center=0, xticklabels=page_names, yticklabels=page_names, linewidths=.5, cmap='RdBu_r')
-#     plt.xlabel('Target Page')
-#     plt.ylabel('Context Page')
-#     plt.savefig('top_20_context_hit_rates.pdf', bbox_inches='tight')
-#     plt.show()
-#
-#     flat_dot_prods = dot_prods.flatten()
-#     flat_hit_rate_diffs = hit_rate_diffs.flatten()
-#
-#     print('Correlation:', stats.pearsonr(flat_dot_prods, flat_hit_rate_diffs))
-#
-#     slope, intercept, r_value, p_value, std_err = stats.linregress(flat_dot_prods, flat_hit_rate_diffs)
-#     plt.plot(np.linspace(-0.4, 0.7), slope * np.linspace(-0.4, 0.7) + intercept, c='#ffa600')
-#     print(r_value, p_value, std_err)
-#
-#     plt.scatter(flat_dot_prods, flat_hit_rate_diffs)
-#     plt.xlabel('Context effect score')
-#     plt.ylabel('Conditional hit rate boost')
-#     plt.savefig('context_score_correlation.pdf', bbox_inches='tight')
-#     plt.show()
-#
-#
-# def all_tsne(param_fname, dim):
-#     graph, train_data, val_data, test_data = load_wikispeedia()
-#     n = len(graph.nodes)
-#
-#     for embedding in load_normalized_embeddings(param_fname, n, dim):
-#         tsne_embedding(embedding)
-#
-#
-# def tsne_embedding(embedding):
-#     print('Running TSNE...')
-#     tsne = TSNE(n_components=2, random_state=1).fit_transform(embedding)
-#     print('Done.')
-#     plt.scatter(tsne[:, 0], tsne[:, 1])
-#     plt.show()
+    choice_set_sizes = np.random.randint(2, 1000, samples)
+    choice_set_reciprocities = np.random.random(samples) * 0.9 + 0.1
+    choices = np.random.binomial(1, like_factor*choice_set_reciprocities / (like_factor*choice_set_reciprocities + (1-choice_set_reciprocities)))
+
+    x_min = min([x for x in choice_set_reciprocities if x > 0]) * 0.8
+    x_max = max(choice_set_reciprocities) * 1.2
+
+    y_variable = choices / choice_set_reciprocities
+
+    values, bins = np.histogram(choice_set_reciprocities, bins=np.logspace(np.log(x_min), np.log(x_max), num_bins))
+
+    idx = np.digitize(choice_set_reciprocities, bins)
+
+    mean_y_vars = np.zeros(num_bins)
+    bin_counts = np.zeros(num_bins)
+
+    for bin in range(num_bins):
+        mean_y_vars[bin] = (1 / np.mean(choice_set_reciprocities[idx == bin]) - 1) / (1 / np.mean(choices[idx == bin]) - 1)
+        bin_counts[bin] = np.count_nonzero(idx == bin)
+
+    plt.set_cmap('plasma')
+
+    plt.scatter(choice_set_reciprocities, y_variable, c=np.log(choice_set_sizes))
+
+    plt.scatter(bins, mean_y_vars, alpha=1, s=bin_counts ** 0.8, marker='o', color='black')
+    plt.scatter(bins, mean_y_vars, alpha=1, s=1, marker='.', color='white')
+    plt.hlines([like_factor], x_min, x_max, color='red')
+
+    plt.yscale('symlog', linthreshy=1)
+    plt.xscale('log')
+
+    plt.show()
+
 
 if __name__ == '__main__':
-    examine_email_enron()
+    for dataset in [FacebookWallDataset, EmailEnronDataset, EmailEUDataset, CollegeMsgDataset, SMSBDataset]:
+        # learn_binned_mnl(dataset)
+        plot_binned_mnl(dataset, f'feature_context_mixture_{dataset.name}_params_0.005_0.pt')
 
 
-    # model = load_feature_model(FeatureCDM, 3, 'feature_cdm_mathoverflow_params_0.01_0.pt')
-    # print(model.contexts, model.weights)
-    # for param_name, loss_name in zip(('feature_mnl_email-enron_params_0.005_0.pt', 'feature_mnl_email-enron_params_0.005_0.0001.pt', 'feature_mnl_email-enron_params_0.005_0.001.pt'),
-    #                               ('feature_mnl_email-enron_losses_0.005_0.pickle', 'feature_mnl_email-enron_losses_0.005_0.0001.pickle', 'feature_mnl_email-enron_losses_0.005_0.001.pickle')):
-    #
-    #     model = load_feature_model(FeatureMNL, 3, param_name)
-    #     print(model.weights)
-    #
-    #     with open(loss_name, 'rb') as f:
-    #         train_losses, train_accs, val_losses, val_accs = pickle.load(f)
-    #
-    #     print(train_accs[-1], val_accs[-1])
-
-    # plot_dataset_stats()
-
-    # plot_compare_all()
-
-    # plot_grid_search(HistoryCDM, EmailEnronDataset)
-    # plot_grid_search(HistoryMNL, EmailEnronDataset)
-    # plot_grid_search(LSTM, YoochooseDataset)
-
-    # graph, train_data, val_data, test_data = YoochooseDataset.load()
-    #
-    # for param_fname in ('params/history_cdm_yoochoose_params_64_0.005_0_0.5_True.pt',):
-    #     print(param_fname)
-    #
-    #     model = load_model(HistoryCDM, len(graph.nodes), 64, param_fname)
-    #     print(model.num_items, model.dim, np.mean(model.target_embedding.weight.detach().numpy()))
-    #     loaded_data = graph, train_data, val_data, test_data
-    #     acc, mean_rank, mrr = test_model(model, YoochooseDataset, loaded_data=loaded_data)
-    #     print(f'Accuracy: {acc:.2f}, beta: {model.beta.item():.2f}')
-
-    # for param_fname in ('params/lstm_wikispeedia_params_64_0.005_0.pt',
-    #                     'params/wikispeedia_lstm_params_64_0.005_0.pt'):
-    #     print(param_fname)
-    #
-    #     model = load_model(LSTM, len(graph.nodes), 64, param_fname)
-    #     print(model.num_items, model.dim)
-    #     loaded_data = graph, train_data, val_data, test_data
-    #     acc, mean_rank, mrr = test_model(model, WikispeediaDataset, loaded_data=loaded_data)
-    #     print(f'Accuracy: {acc:.2f}')
-
-    # with open('results/history_cdm_wikispeedia_losses_64_0.005_0_0.5_True.pickle', 'rb') as f:
-    #     losses = pickle.load(f)
-    # plt.plot(range(500), losses, label='new_losses')
-    #
-    # with open('results/wikispeedia_learn_beta_losses_64_0.005_0.pickle', 'rb') as f:
-    #     old_losses = pickle.load(f)
-    # plt.plot(range(500), old_losses, label='old_losses', ls='dashed')
-    #
-    # plt.legend()
-    # plt.show()
