@@ -29,7 +29,7 @@ def run_model(method, dataset, dim, lr, wd, beta=None, learn_beta=None):
         pickle.dump((train_losses, train_accs, val_losses, val_accs), f)
 
 
-def run_feature_model(method, dataset, lr, wd):
+def run_feature_model_full_dataset(method, dataset, lr, wd):
     graph, train_data, val_data, test_data = dataset.load()
 
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
@@ -39,6 +39,19 @@ def run_feature_model(method, dataset, lr, wd):
     model, train_losses, train_accs, val_losses, val_accs = training_methods[method](all_data, val_data, 3, lr=lr, weight_decay=wd, compute_val_stats=False)
     torch.save(model.state_dict(), f'{method.name}_{dataset.name}_params_{lr}_{wd}.pt')
     with open(f'{method.name}_{dataset.name}_losses_{lr}_{wd}.pickle', 'wb') as f:
+        pickle.dump((train_losses, train_accs, val_losses, val_accs), f)
+
+    return model
+
+
+def run_feature_model_train_data(method, dataset, lr, wd):
+    graph, train_data, val_data, test_data = dataset.load()
+
+    print(f'Training {method.name} on {dataset.name}, training data only (lr={lr}, wd={wd})')
+
+    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](train_data[3:], val_data[3:], 3, lr=lr, weight_decay=wd, compute_val_stats=True)
+    torch.save(model.state_dict(), f'{method.name}_{dataset.name}_train_params_{lr}_{wd}.pt')
+    with open(f'{method.name}_{dataset.name}_train_losses_{lr}_{wd}.pickle', 'wb') as f:
         pickle.dump((train_losses, train_accs, val_losses, val_accs), f)
 
     return model
@@ -193,27 +206,45 @@ def run_likelihood_ratio_test(dataset, lr):
     torch.random.manual_seed(0)
     np.random.seed(0)
 
-    model = run_feature_model(FeatureMNL, dataset, lr, 0)
+    model = run_feature_model_full_dataset(FeatureMNL, dataset, lr, 0.001)
     print(model.weights)
 
     torch.random.manual_seed(0)
     np.random.seed(0)
 
-    model = run_feature_model(FeatureContextMixture, dataset, lr, 0)
+    model = run_feature_model_full_dataset(FeatureContextMixture, dataset, lr, 0.001)
     print(model.weights, model.intercepts, model.slopes)
 
     torch.random.manual_seed(0)
     np.random.seed(0)
-    model = run_feature_model(FeatureCDM, dataset, lr, 0)
+    model = run_feature_model_full_dataset(FeatureCDM, dataset, lr, 0.001)
     print(model.weights, model.contexts)
 
 
 if __name__ == '__main__':
-    torch.autograd.set_detect_anomaly(True)
-    run_likelihood_ratio_test(FacebookWallDataset, 0.005)
-    run_likelihood_ratio_test(EmailEnronDataset, 0.005)
-    run_likelihood_ratio_test(CollegeMsgDataset, 0.005)
-    run_likelihood_ratio_test(EmailEUDataset, 0.005)
-    run_likelihood_ratio_test(SMSBDataset, 0.005)
+    # run_likelihood_ratio_test(FacebookWallDataset, 0.005)
+    # run_likelihood_ratio_test(EmailEnronDataset, 0.005)
+    # run_likelihood_ratio_test(CollegeMsgDataset, 0.005)
+    # run_likelihood_ratio_test(EmailEUDataset, 0.005)
+    # run_likelihood_ratio_test(EmailW3CDataset, 0.005)
+    # run_likelihood_ratio_test(MathOverflowDataset, 0.005)
+    # run_likelihood_ratio_test(SMSADataset, 0.005)
+    # run_likelihood_ratio_test(SMSBDataset, 0.005)
+    # run_likelihood_ratio_test(SMSCDataset, 0.005)
+
+    for dataset in [FacebookWallDataset, EmailEnronDataset, EmailEUDataset, EmailW3CDataset, CollegeMsgDataset,
+                    SMSADataset, SMSBDataset, SMSCDataset, MathOverflowDataset]:
+        torch.random.manual_seed(0)
+        np.random.seed(0)
+        run_feature_model_train_data(FeatureMNL, dataset, 0.005, 0.001)
+
+        torch.random.manual_seed(0)
+        np.random.seed(0)
+        run_feature_model_train_data(FeatureCDM, dataset, 0.005, 0.001)
+
+        torch.random.manual_seed(0)
+        np.random.seed(0)
+        run_feature_model_train_data(FeatureContextMixture, dataset, 0.005, 0.001)
+
 
 

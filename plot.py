@@ -4,6 +4,7 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import statsmodels.api as sm
 import scipy.stats as stats
 import matplotlib.ticker as ticker
 from tqdm import tqdm
@@ -12,7 +13,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
-    FeatureContextMixture
+    FeatureContextMixture, train_model
 
 
 def load_model(Model, n, dim, param_fname):
@@ -257,8 +258,7 @@ def compile_choice_data(dataset):
 
         mean_available_in_degrees.append(np.mean(np.exp(choice_set[:, 0])))
         mean_available_shared_neighbors.append(np.mean(np.exp(choice_set[:, 1])))
-        mean_available_reciprocities.append(np.mean(choice_set[:, 2]))
-
+        mean_available_reciprocities.append(np.mean(np.exp(choice_set[:, 2])))
 
     in_degree_ratios = np.array(in_degree_ratios)
     shared_neighbors_ratios = np.array(shared_neighbors_ratios)
@@ -309,7 +309,7 @@ def learn_binned_mnl(dataset):
                 continue
 
             bin_data = [torch.tensor(choice_set_features[bin_idx]), torch.tensor(choice_set_lengths[bin_idx]), torch.tensor(choices[bin_idx])]
-            mnl, train_losses, _, _, _ = train_feature_mnl(bin_data, bin_data, 3, lr=0.01, weight_decay=0)
+            mnl, train_losses, _, _, _ = train_feature_mnl(bin_data, bin_data, 3, lr=0.01, weight_decay=0.001)
             mnl_utilities[bin] = mnl.weights.detach().numpy()
             bin_choice_set_log_lengths[bin] = np.mean(np.log(choice_set_lengths[bin_idx]))
             bin_losses[bin] = torch.nn.functional.nll_loss(mnl(*bin_data[:-1]), bin_data[-1], reduction='sum').item()
@@ -337,19 +337,28 @@ def plot_binned_mnl(dataset, model_param_fname):
     y_mins = [np.inf, np.inf, np.inf]
     y_maxs = [-np.inf, -np.inf, -np.inf]
 
-    for col, x_name in enumerate(['In-degree', 'Shared Neighbors', 'Reciprocity']):
+    wls_slopes = torch.zeros(3, 3)
+    wls_intercepts = torch.zeros(3, 3)
+
+    for col, x_name in enumerate(['In-degree', 'Shared Neighbors', 'Reciprocal Weight']):
         bins, mnl_utilities, bin_counts, bin_choice_set_log_lengths, bin_losses = data[col]
+
+        nonempty = bin_counts > 0
 
         x_min = bins[min([i for i in range(len(bins)) if bin_counts[i] > 0])]
         x_max = bins[max([i for i in range(len(bins)) if bin_counts[i] > 0])]
 
-        for row, y_name in enumerate(['Log In-degree', 'Log Shared Neighbors', 'Reciprocity']):
+        for row, y_name in enumerate(['Log In-degree', 'Log Shared Neighbors', 'Log Reciprocal Weight']):
+            with_const = sm.add_constant(np.log(bins[nonempty]))
+            mod_wls = sm.WLS(mnl_utilities[nonempty, row], with_const, weights=bin_counts[nonempty])
+            res_wls = mod_wls.fit()
+            wls_intercepts[row, col], wls_slopes[row, col] = res_wls.params
 
-            scatterplot = axes[row, col].scatter(bins, mnl_utilities[:, row], alpha=1, s=bin_counts, marker='o', c=bin_choice_set_log_lengths)
+            axes[row, col].scatter(bins, mnl_utilities[:, row], alpha=1, s=bin_counts, marker='o', c=bin_choice_set_log_lengths)
             axes[row, col].scatter(bins, mnl_utilities[:, row], alpha=1, s=1, marker='.', color='white')
 
-            transformed_bins = np.log(bins) if col < 2 else bins
-            axes[row, col].plot(bins, list(map(lambda x: intercepts[row, col] + x * slopes[row, col], transformed_bins)))
+            axes[row, col].plot(bins, list(map(lambda x: intercepts[row, col] + x * slopes[row, col], np.log(bins))), label='mixture model')
+            axes[row, col].plot(bins, list(map(lambda x: wls_intercepts[row, col] + x * wls_slopes[row, col], np.log(bins))), label='WLS')
 
             if col == 0:
                 axes[row, col].set_ylabel(f'{y_name} Utility')
@@ -357,24 +366,42 @@ def plot_binned_mnl(dataset, model_param_fname):
                 plt.setp(axes[row, col].get_yticklabels(), visible=False)
 
             if row == 2:
-
                 axes[row, col].set_xlabel(f'Choice Set {x_name}')
             elif row == 0:
-                axes[row, col].set_title(f'NLL: {bin_losses.sum():.0f}, weight: {np.exp(weights[col]) / np.exp(weights).sum():.2f}')
+                axes[row, col].set_title(f'Binned MNL NLL: {bin_losses.sum():.0f}\nMixture weight: {np.exp(weights[col]) / np.exp(weights).sum():.2f}')
 
             axes[row, col].set_xlim(x_min, x_max)
 
-            if col < 2:
-                axes[row, col].set_xscale('log')
-            else:
-                axes[row, col].set_xscale('symlog', linthreshx=0.01)
-                axes[row, col].set_xlim(-0.0001, x_max)
+            axes[row, col].set_xscale('log')
 
             y_mins[row] = min(y_mins[row], min(mnl_utilities[:, row]))
             y_maxs[row] = max(y_maxs[row], max(mnl_utilities[:, row]))
 
     for row in range(3):
         axes[row, 0].set_ylim(y_mins[row]-1, y_maxs[row]+1)
+
+    axes[0, 0].legend()
+
+    graph, train_data, val_data, test_data = dataset.load()
+    histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [
+        torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(len(train_data))]
+
+    sgd_nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
+
+    model.slopes.data = wls_slopes
+    model.intercepts.data = wls_intercepts
+    model.weights.data = torch.ones(3)
+
+    all_data = [choice_set_features, choice_set_lengths, choices]
+    wls_nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
+
+    mnl = load_feature_model(FeatureMNL, 3, model_param_fname.replace('feature_context_mixture', 'feature_mnl'))
+    mnl_nll = torch.nn.functional.nll_loss(mnl(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
+
+    cdm = load_feature_model(FeatureCDM, 3, model_param_fname.replace('feature_context_mixture', 'feature_cdm'))
+    cdm_nll = torch.nn.functional.nll_loss(cdm(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
+
+    axes[0, 1].text(0.4, 0.7, f'Mix NLL: {sgd_nll:.0f}\nWLS NLL: {wls_nll:.0f}\nMNL NLL: {mnl_nll:.0f}\nCDM NLL: {cdm_nll:.0f}', transform=axes[0, 1].transAxes)
 
     plt.savefig(f'{dataset.name}-mixture-fit-feature-utilities.pdf', bbox_inches='tight')
     plt.close()
@@ -399,55 +426,93 @@ def examine_choice_set_size_effects(dataset):
 
         if j < 2:
             axes[j].set_yscale('log')
-        else:
-            axes[j].set_yscale('symlog', linthreshy=0.001)
 
     plt.savefig(f'{dataset.name}-choice-set-lengths.pdf', bbox_inches='tight')
 
 
-def simulate_reciprocity_plot():
+def plot_all_training_accuracies():
+    datasets = [EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+                    SMSADataset, SMSBDataset, SMSCDataset, CollegeMsgDataset, MathOverflowDataset, FacebookWallDataset]
+    fig, axes = plt.subplots(3, 1, figsize=(14, 11))
 
-    samples = 100000
-    num_bins = 100
-    like_factor = 1
+    losses = [[], [], []]
+    accs = [[], [], []]
+    mrrs = [[], [], []]
 
-    choice_set_sizes = np.random.randint(2, 1000, samples)
-    choice_set_reciprocities = np.random.random(samples) * 0.9 + 0.1
-    choices = np.random.binomial(1, like_factor*choice_set_reciprocities / (like_factor*choice_set_reciprocities + (1-choice_set_reciprocities)))
+    for i, dataset in enumerate(datasets):
+        graph, train_data, val_data, test_data = dataset.load()
 
-    x_min = min([x for x in choice_set_reciprocities if x > 0]) * 0.8
-    x_max = max(choice_set_reciprocities) * 1.2
+        histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
 
-    y_variable = choices / choice_set_reciprocities
+        for j, method in enumerate([FeatureMNL, FeatureCDM, FeatureContextMixture]):
+            param_fname = f'{method.name}_{dataset.name}_train_params_0.005_0.001.pt'
+            model = load_feature_model(method, 3, param_fname)
 
-    values, bins = np.histogram(choice_set_reciprocities, bins=np.logspace(np.log(x_min), np.log(x_max), num_bins))
+            pred = model(choice_sets_with_features, choice_set_lengths)
+            train_loss = model.loss(pred, choices)
 
-    idx = np.digitize(choice_set_reciprocities, bins)
+            ranks = pred.argsort(1, descending=True) + 1
 
-    mean_y_vars = np.zeros(num_bins)
-    bin_counts = np.zeros(num_bins)
+            vals, idxs = pred.max(1)
+            acc = (idxs == choices).long().sum().item() / len(choices)
 
-    for bin in range(num_bins):
-        mean_y_vars[bin] = (1 / np.mean(choice_set_reciprocities[idx == bin]) - 1) / (1 / np.mean(choices[idx == bin]) - 1)
-        bin_counts[bin] = np.count_nonzero(idx == bin)
+            losses[j].append(train_loss.item())
+            accs[j].append(acc)
+            mrrs[j].append((1 / ranks[torch.arange(len(choices)), choices].float()).sum().item() / len(choices))
 
-    plt.set_cmap('plasma')
+    bar_width = 0.25
 
-    plt.scatter(choice_set_reciprocities, y_variable, c=np.log(choice_set_sizes))
+    xs = [np.arange(9) - bar_width, np.arange(9), np.arange(9) + bar_width]
+    method_names = ['Feature MNL', 'Feature CDM', 'Context Mixture']
 
-    plt.scatter(bins, mean_y_vars, alpha=1, s=bin_counts ** 0.8, marker='o', color='black')
-    plt.scatter(bins, mean_y_vars, alpha=1, s=1, marker='.', color='white')
-    plt.hlines([like_factor], x_min, x_max, color='red')
+    losses = np.array(losses)
+    accs = np.array(accs)
+    mrrs = np.array(mrrs)
 
-    plt.yscale('symlog', linthreshy=1)
-    plt.xscale('log')
+    min_nll_indices = np.argmin(losses, axis=0)
+    max_acc_indices = np.argmax(accs, axis=0)
+    max_mrr_indices = np.argmax(mrrs, axis=0)
 
-    plt.show()
+    min_nll_xs = (np.arange(9) - bar_width) + (min_nll_indices * bar_width)
+    max_acc_xs = (np.arange(9) - bar_width) + (max_acc_indices * bar_width)
+    max_mrr_xs = (np.arange(9) - bar_width) + (max_mrr_indices * bar_width)
+
+    min_nll_ys = losses[min_nll_indices, np.arange(9)] + 0.1
+    max_acc_ys = accs[max_acc_indices, np.arange(9)] + 0.01
+    max_mrr_ys = mrrs[max_mrr_indices, np.arange(9)] + 0.01
+
+    axes[0].scatter(min_nll_xs, min_nll_ys, marker='*', color='black')
+    axes[1].scatter(max_acc_xs, max_acc_ys, marker='*', color='black')
+    axes[2].scatter(max_mrr_xs, max_mrr_ys, marker='*', color='black')
+
+    for i in range(3):
+        axes[0].bar(xs[i], losses[i], edgecolor='white', label=method_names[i], width=bar_width)
+        axes[1].bar(xs[i], accs[i], edgecolor='white', label=method_names[i], width=bar_width)
+        axes[2].bar(xs[i], mrrs[i], edgecolor='white', label=method_names[i], width=bar_width)
+
+    axes[0].set_xticks(np.arange(9))
+    axes[0].set_xticklabels([dataset.name for dataset in datasets])
+    axes[1].set_xticks(np.arange(9))
+    axes[1].set_xticklabels([dataset.name for dataset in datasets])
+    axes[2].set_xticks(np.arange(9))
+    axes[2].set_xticklabels([dataset.name for dataset in datasets])
+
+    axes[0].set_ylabel('Mean Test NLL')
+    axes[1].set_ylabel('Test Accuracy')
+    axes[2].set_ylabel('Test MRR')
+
+    axes[0].legend()
+
+    plt.savefig('plots/test_performance.pdf', bbox_inches='tight')
 
 
 if __name__ == '__main__':
-    for dataset in [FacebookWallDataset, EmailEnronDataset, EmailEUDataset, CollegeMsgDataset, SMSBDataset]:
-        # learn_binned_mnl(dataset)
-        plot_binned_mnl(dataset, f'feature_context_mixture_{dataset.name}_params_0.005_0.pt')
+    plot_all_training_accuracies()
 
+    # for dataset in [FacebookWallDataset, EmailEnronDataset, EmailEUDataset, EmailW3CDataset, CollegeMsgDataset,
+    #                 SMSADataset, SMSBDataset, SMSCDataset, MathOverflowDataset]:
+        # print(dataset.name)
+        # if not os.path.isfile(f'{dataset.name}_binned_mnl_params.pickle'):
+        #     learn_binned_mnl(dataset)
+        # plot_binned_mnl(dataset, f'feature_context_mixture_{dataset.name}_params_0.005_0.001.pt')
 

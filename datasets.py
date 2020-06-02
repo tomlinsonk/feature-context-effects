@@ -710,5 +710,10 @@ if __name__ == '__main__':
     SMSADataset.print_stats()
     SMSBDataset.print_stats()
     SMSCDataset.print_stats()
-
+    EmailEnronDataset.print_stats()
+    EmailEUDataset.print_stats()
+    FacebookWallDataset.print_stats()
+    CollegeMsgDataset.print_stats()
+    EmailW3CDataset.print_stats()
+    MathOverflowDataset.print_stats()
 

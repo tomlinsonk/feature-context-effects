@@ -462,7 +462,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
         train_accs.append(train_correct / train_count)
         train_losses.append(train_loss / train_count)
 
-        print(f'{epoch}: {total_loss}')
+        # print(f'{epoch}: {total_loss}')
         if prev_total_loss - total_loss < prev_total_loss * 0.00001 or total_loss < 0.001:
             break
         prev_total_loss = total_loss
@@ -492,7 +492,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
             val_losses.append(val_loss / val_count)
             val_accs.append(val_correct / val_count)
 
-    print('Total loss:', total_loss)
+    # print('Total loss:', total_loss)
     return model, train_losses, train_accs, val_losses, val_accs
 
 
