@@ -10,7 +10,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
-    FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture
+    FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em
 
 training_methods = {HistoryCDM: train_history_cdm, HistoryMNL: train_history_mnl, LSTM: train_lstm, FeatureMNL: train_feature_mnl,
                     FeatureCDM: train_feature_cdm, FeatureContextMixture: train_feature_context_mixture}
@@ -46,6 +46,8 @@ def run_feature_model_full_dataset(method, dataset, lr, wd):
 
 def run_feature_model_train_data(method, dataset, lr, wd):
     graph, train_data, val_data, test_data = dataset.load()
+
+    context_mixture_em(train_data, 3)
 
     print(f'Training {method.name} on {dataset.name}, training data only (lr={lr}, wd={wd})')
 
@@ -232,19 +234,27 @@ if __name__ == '__main__':
     # run_likelihood_ratio_test(SMSBDataset, 0.005)
     # run_likelihood_ratio_test(SMSCDataset, 0.005)
 
-    for dataset in [FacebookWallDataset, EmailEnronDataset, EmailEUDataset, EmailW3CDataset, CollegeMsgDataset,
-                    SMSADataset, SMSBDataset, SMSCDataset, MathOverflowDataset]:
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(FeatureMNL, dataset, 0.005, 0.001)
+    # for dataset in [FacebookWallDataset, EmailEnronDataset, EmailEUDataset, EmailW3CDataset, CollegeMsgDataset,
+    #                 SMSADataset, SMSBDataset, SMSCDataset, MathOverflowDataset]:
+    #
+    #
+    #
+    #     torch.random.manual_seed(0)
+    #     np.random.seed(0)
+    #     run_feature_model_train_data(FeatureMNL, dataset, 0.005, 0.001)
+    #
+    #     torch.random.manual_seed(0)
+    #     np.random.seed(0)
+    #     run_feature_model_train_data(FeatureCDM, dataset, 0.005, 0.001)
+    #
+    #     torch.random.manual_seed(0)
+    #     np.random.seed(0)
+    #     run_feature_model_train_data(FeatureContextMixture, dataset, 0.005, 0.001)
 
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(FeatureCDM, dataset, 0.005, 0.001)
+    graph, train_data, val_data, test_data = EmailEnronDataset.load()
 
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(FeatureContextMixture, dataset, 0.005, 0.001)
+    all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(len(train_data))]
+    context_mixture_em(all_data, 3)
 
 
 

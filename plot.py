@@ -437,9 +437,11 @@ def plot_all_training_accuracies():
 
     losses = [[], [], []]
     accs = [[], [], []]
-    mrrs = [[], [], []]
+    optimistic_mrrs = [[], [], []]
+    pessimistic_mrrs = [[], [], []]
 
     for i, dataset in enumerate(datasets):
+        print(dataset.name)
         graph, train_data, val_data, test_data = dataset.load()
 
         histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
@@ -451,14 +453,17 @@ def plot_all_training_accuracies():
             pred = model(choice_sets_with_features, choice_set_lengths)
             train_loss = model.loss(pred, choices)
 
-            ranks = pred.argsort(1, descending=True) + 1
+            optimistic_ranks = stats.rankdata(-pred.detach().numpy(), method='min', axis=1)
+            pessimistic_ranks = stats.rankdata(-pred.detach().numpy(), method='max', axis=1)
 
             vals, idxs = pred.max(1)
+
             acc = (idxs == choices).long().sum().item() / len(choices)
 
             losses[j].append(train_loss.item())
             accs[j].append(acc)
-            mrrs[j].append((1 / ranks[torch.arange(len(choices)), choices].float()).sum().item() / len(choices))
+            optimistic_mrrs[j].append((1 / optimistic_ranks[np.arange(len(choices)), choices]).sum() / len(choices))
+            pessimistic_mrrs[j].append((1 / pessimistic_ranks[np.arange(len(choices)), choices]).sum() / len(choices))
 
     bar_width = 0.25
 
@@ -467,7 +472,7 @@ def plot_all_training_accuracies():
 
     losses = np.array(losses)
     accs = np.array(accs)
-    mrrs = np.array(mrrs)
+    mrrs = (np.array(optimistic_mrrs) +  np.array(pessimistic_mrrs)) / 2
 
     min_nll_indices = np.argmin(losses, axis=0)
     max_acc_indices = np.argmax(accs, axis=0)

@@ -4,6 +4,7 @@ import torch
 from torch import nn, jit
 from torch.nn.utils.rnn import pack_padded_sequence
 from tqdm import tqdm
+from scipy import optimize as opt
 
 
 # From https://github.com/pytorch/pytorch/issues/31829
@@ -361,6 +362,36 @@ class LSTM(nn.Module):
         return nn.functional.nll_loss(y_pred, y)
 
 
+class EMAlgorithmQ(nn.Module):
+
+    def __init__(self, num_features, r, mean_cs_features, device=torch.device('cpu')):
+        super().__init__()
+
+        self.num_features = num_features
+        self.r = r
+        self.mean_feat_matrix = (torch.ones(self.num_features, 1) @ mean_cs_features[:, None, :])
+
+        self.B = nn.Parameter(torch.ones(self.num_features, self.num_features), requires_grad=True)
+        self.C = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
+
+        self.device = device
+
+    def forward(self, choice_set_features, choice_set_lengths, choices):
+        batch_size, max_choice_set_len, _ = choice_set_features.size()
+
+        # Use linear context model to compute utility matrices for each sample
+        utility_matrices = self.B + self.C * self.mean_feat_matrix
+
+        # Compute utility of each item under each feature MNL
+        utilities = choice_set_features @ utility_matrices
+        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
+
+        # Compute MNL log-probs for each feature
+        log_probs = nn.functional.log_softmax(utilities, 1)[torch.arange(batch_size), choices]
+
+        return - (self.r * log_probs).sum()
+
+
 def toy_example():
     n = 4
     histories = torch.tensor(
@@ -585,6 +616,72 @@ def train_lstm(n, train_data, val_data, dim=64, lr=1e-4, weight_decay=1e-4, beta
         val_accs.append(val_correct / val_count)
 
     return model, train_losses, train_accs, val_losses, val_accs
+
+
+def context_mixture_em(train_data, num_features):
+    n = num_features
+
+
+
+    histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = train_data
+
+    B = torch.ones(n, n, requires_grad=False).float()
+    C = torch.zeros(n, n, requires_grad=False).float()
+    alpha = torch.ones(n, requires_grad=False).float() / n
+
+    # Compute mean of each feature over each choice set
+    batch_size, max_choice_set_len, _ = choice_set_features.size()
+    mean_choice_set_features = choice_set_features.sum(1) / choice_set_lengths[:, None]
+    nan_idx = torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]
+
+    while True:
+        # Use learned linear context model to compute utility matrices for each sample
+        utility_matrices = B + C * (torch.ones(n, 1) @ mean_choice_set_features[:, None, :])
+
+        # Compute utility of each item under each feature MNL
+        utilities = choice_set_features @ utility_matrices
+        utilities[nan_idx] = -np.inf
+
+        # Compute MNL log-probs for each feature, pick out only chosen items
+        log_probs = nn.functional.log_softmax(utilities, 1)[torch.arange(batch_size), choices]
+
+        responsibilities = nn.functional.softmax(log_probs + torch.log(alpha), 1)
+
+        Q = EMAlgorithmQ(3, responsibilities, mean_choice_set_features)
+        optimizer = torch.optim.LBFGS(Q.parameters())
+
+        prev_loss = np.inf
+        loss = Q(choice_set_features, choice_set_lengths, choices)
+
+        while prev_loss > loss * 1.0001:
+            prev_loss = loss
+            loss = Q(choice_set_features, choice_set_lengths, choices)
+
+            def closure():
+                optimizer.zero_grad()
+                loss = Q(choice_set_features, choice_set_lengths, choices)
+                loss.backward()
+                return loss
+
+            optimizer.step(closure)
+
+        print('B:', Q.B)
+        print('C:', Q.C)
+
+        B = Q.B.clone().detach()
+        C = Q.C.clone().detach()
+
+        alpha = responsibilities.sum(0) / batch_size
+
+        print('new alpha:', alpha)
+
+        test_model = FeatureContextMixture(3)
+        test_model.intercepts.data = B
+        test_model.slopes.data = C
+        test_model.weights.data = alpha
+
+        print('NLL:', torch.nn.functional.nll_loss(test_model(choice_set_features, choice_set_lengths), choices, reduction='sum').item())
+
 
 
 if __name__ == '__main__':
