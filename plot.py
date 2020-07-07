@@ -13,7 +13,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
-    FeatureContextMixture, train_model
+    FeatureContextMixture, train_model, FeatureSelector, RandomSelector
 
 
 def load_model(Model, n, dim, param_fname):
@@ -28,10 +28,12 @@ def load_model(Model, n, dim, param_fname):
     return model
 
 
-def load_feature_model(Model, num_features, param_fname):
-    model = Model(num_features)
+def load_feature_model(Model, model_param, param_fname):
+    model = Model(model_param)
 
-    model.load_state_dict(torch.load(param_fname))
+    if Model not in [RandomSelector, FeatureSelector]:
+        model.load_state_dict(torch.load(param_fname))
+
     model.eval()
 
     return model
@@ -435,20 +437,22 @@ def plot_all_training_accuracies():
                     SMSADataset, SMSBDataset, SMSCDataset, CollegeMsgDataset, MathOverflowDataset, FacebookWallDataset]
     fig, axes = plt.subplots(3, 1, figsize=(14, 11))
 
-    losses = [[], [], []]
-    accs = [[], [], []]
-    optimistic_mrrs = [[], [], []]
-    pessimistic_mrrs = [[], [], []]
+    losses = [list() for _ in range(7)]
+    accs = [list() for _ in range(7)]
+    optimistic_mrrs = [list() for _ in range(7)]
+    pessimistic_mrrs = [list() for _ in range(7)]
 
     for i, dataset in enumerate(datasets):
         print(dataset.name)
         graph, train_data, val_data, test_data = dataset.load()
 
-        histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
+        histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = train_data
 
-        for j, method in enumerate([FeatureMNL, FeatureCDM, FeatureContextMixture]):
+        for j, method in enumerate([FeatureMNL, FeatureCDM, FeatureContextMixture, FeatureSelector, FeatureSelector, FeatureSelector, RandomSelector]):
             param_fname = f'{method.name}_{dataset.name}_train_params_0.005_0.001.pt'
-            model = load_feature_model(method, 3, param_fname)
+
+            model_param = 3 if j < 3 else j - 3
+            model = load_feature_model(method, model_param, param_fname)
 
             pred = model(choice_sets_with_features, choice_set_lengths)
             train_loss = model.loss(pred, choices)
@@ -465,32 +469,32 @@ def plot_all_training_accuracies():
             optimistic_mrrs[j].append((1 / optimistic_ranks[np.arange(len(choices)), choices]).sum() / len(choices))
             pessimistic_mrrs[j].append((1 / pessimistic_ranks[np.arange(len(choices)), choices]).sum() / len(choices))
 
-    bar_width = 0.25
+    bar_width = 0.1
 
-    xs = [np.arange(9) - bar_width, np.arange(9), np.arange(9) + bar_width]
-    method_names = ['Feature MNL', 'Feature CDM', 'Context Mixture']
+    xs = [np.arange(9) + (i * bar_width) for i in range(-3, 4)]
+    method_names = ['Feature MNL', 'Feature CDM', 'Context Mixture', 'In-Degree', 'Shared Neighbors', 'Reciprocal Weight', 'Random']
 
     losses = np.array(losses)
     accs = np.array(accs)
-    mrrs = (np.array(optimistic_mrrs) +  np.array(pessimistic_mrrs)) / 2
+    mrrs = (np.array(optimistic_mrrs) + np.array(pessimistic_mrrs)) / 2
 
     min_nll_indices = np.argmin(losses, axis=0)
     max_acc_indices = np.argmax(accs, axis=0)
     max_mrr_indices = np.argmax(mrrs, axis=0)
 
-    min_nll_xs = (np.arange(9) - bar_width) + (min_nll_indices * bar_width)
-    max_acc_xs = (np.arange(9) - bar_width) + (max_acc_indices * bar_width)
-    max_mrr_xs = (np.arange(9) - bar_width) + (max_mrr_indices * bar_width)
+    min_nll_xs = (np.arange(9) - 3 * bar_width) + (min_nll_indices * bar_width)
+    max_acc_xs = (np.arange(9) - 3 * bar_width) + (max_acc_indices * bar_width)
+    max_mrr_xs = (np.arange(9) - 3 * bar_width) + (max_mrr_indices * bar_width)
 
-    min_nll_ys = losses[min_nll_indices, np.arange(9)] + 0.1
+    min_nll_ys = losses[min_nll_indices, np.arange(9)] + 0.2
     max_acc_ys = accs[max_acc_indices, np.arange(9)] + 0.01
-    max_mrr_ys = mrrs[max_mrr_indices, np.arange(9)] + 0.01
+    max_mrr_ys = mrrs[max_mrr_indices, np.arange(9)] + 0.02
 
     axes[0].scatter(min_nll_xs, min_nll_ys, marker='*', color='black')
     axes[1].scatter(max_acc_xs, max_acc_ys, marker='*', color='black')
     axes[2].scatter(max_mrr_xs, max_mrr_ys, marker='*', color='black')
 
-    for i in range(3):
+    for i in range(7):
         axes[0].bar(xs[i], losses[i], edgecolor='white', label=method_names[i], width=bar_width)
         axes[1].bar(xs[i], accs[i], edgecolor='white', label=method_names[i], width=bar_width)
         axes[2].bar(xs[i], mrrs[i], edgecolor='white', label=method_names[i], width=bar_width)
@@ -506,9 +510,9 @@ def plot_all_training_accuracies():
     axes[1].set_ylabel('Test Accuracy')
     axes[2].set_ylabel('Test MRR')
 
-    axes[0].legend()
+    axes[1].legend()
 
-    plt.savefig('plots/test_performance.pdf', bbox_inches='tight')
+    plt.savefig('plots/test_performance_with_baselines_train.pdf', bbox_inches='tight')
 
 
 if __name__ == '__main__':

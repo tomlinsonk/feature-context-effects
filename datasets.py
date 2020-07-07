@@ -137,16 +137,20 @@ class Dataset(ABC):
             graph.nodes[node]['index'] = i
 
     @classmethod
-    def build_triadic_closure_data(cls, sorted_edges):
+    def build_triadic_closure_data(cls, timestamped_edges):
+        timestamped_edges = timestamped_edges[timestamped_edges[:, 2].argsort()]
         graph = nx.DiGraph()
 
         node_histories = dict()
+        last_outgoing_edge = dict()
+        last_incoming_edge = dict()
+
         choice_sets = []
         choice_sets_with_features = []
         histories = []
         choices = []
 
-        for sender, recipient in tqdm(sorted_edges):
+        for sender, recipient, timestamp in tqdm(timestamped_edges):
             if sender not in node_histories:
                 node_histories[sender] = []
 
@@ -163,9 +167,17 @@ class Dataset(ABC):
                         intermediate = random.choice(length_2_paths)[1]
                         choice_set = [node for node in graph.neighbors(intermediate) if
                                       not graph.has_edge(sender, node)]
+
+                        # Features: log in-degree, log num shared neighbors, log 1+ reciprocal weight,
+                        # log(2+time since outgoing edge from target), log(2+time since incoming edge to target),
+                        # log(2+time since target -> chooser interaction)
+
                         choice_set_features = [[np.log(graph.in_degree(node)),
                                                 np.log(len(set(graph.successors(node)).union(set(graph.predecessors(node))).intersection(sender_neighbors))),
-                                                0 if not graph.has_edge(node, sender) else np.log(1+graph[node][sender]['weight'])]
+                                                0 if not graph.has_edge(node, sender) else np.log(1+graph[node][sender]['weight']),
+                                                0 if node not in last_outgoing_edge else 1 / np.log(2+timestamp - last_outgoing_edge[node]),
+                                                0 if node not in last_incoming_edge else 1 / np.log(2+timestamp - last_incoming_edge[node]),
+                                                0 if not graph.has_edge(node, sender) else 1 / np.log(2+timestamp - graph[node][sender]['last_timestamp'])]
                                                for node in choice_set]
 
                         choice_sets.append(choice_set)
@@ -178,10 +190,14 @@ class Dataset(ABC):
                 except nx.NetworkXNoPath:
                     pass
 
+            last_outgoing_edge[sender] = timestamp
+            last_incoming_edge[recipient] = timestamp
+
             if graph.has_edge(sender, recipient):
                 graph[sender][recipient]['weight'] = graph[sender][recipient]['weight'] + 1
+                graph[sender][recipient]['last_timestamp'] = timestamp
             else:
-                graph.add_edge(sender, recipient, weight=1)
+                graph.add_edge(sender, recipient, weight=1, last_timestamp=timestamp)
 
         longest_history = max(len(history) for history in histories)
         largest_choice_set = max(len(choice_set) for choice_set in choice_sets)
@@ -202,7 +218,7 @@ class Dataset(ABC):
                         largest_choice_set - len(choice_set))
 
         for choice_set_with_features in choice_sets_with_features:
-            choice_set_with_features += [[0, 0, 0] for _ in range(largest_choice_set - len(choice_set_with_features))]
+            choice_set_with_features += [[0] * 6 for _ in range(largest_choice_set - len(choice_set_with_features))]
 
         histories = torch.tensor(histories)
         history_lengths = torch.tensor(history_lengths)
@@ -378,12 +394,6 @@ class ORCIDSwitchDataset(Dataset):
         histories, history_lengths, choice_sets, choice_set_lengths, choices = cls.build_data_from_paths(paths, graph)
         m = len(histories)
 
-        print('Samples', m)
-        print('Largest choice set', max(choice_set_lengths).item())
-        print('Longest path', max(history_lengths).item() + 1)
-        print('Num nodes', len(graph.nodes))
-        print('Num edges:', len(graph.edges))
-
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_set_lengths,
                                                          choices)
 
@@ -402,14 +412,8 @@ class EmailEnronDataset(Dataset):
         timestamped_edges = np.loadtxt(f'{DATA_DIR}/email-Enron/email-Enron.txt', usecols=(0, 1, 2), dtype=int)
 
         graph, histories, history_lengths, choice_sets, \
-            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
         m = len(histories)
-
-        print('Samples', m)
-        print('Largest choice set', max(choice_set_lengths).item())
-        print('Longest path', max(history_lengths).item() + 1)
-        print('Num nodes', len(graph.nodes))
-        print('Num edges:', len(graph.edges))
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
                                                          choice_set_lengths, choices, shuffle=False)
@@ -436,14 +440,8 @@ class EmailEnronCoreDataset(Dataset):
         timestamped_edges = np.array(filtered_edges)
 
         graph, histories, history_lengths, choice_sets, \
-            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
         m = len(histories)
-
-        print('Samples', m)
-        print('Largest choice set', max(choice_set_lengths).item())
-        print('Longest path', max(history_lengths).item() + 1)
-        print('Num nodes', len(graph.nodes))
-        print('Num edges:', len(graph.edges))
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
                                                          choice_set_lengths, choices, shuffle=False)
@@ -463,15 +461,9 @@ class CollegeMsgDataset(Dataset):
         timestamped_edges = np.loadtxt(f'{DATA_DIR}/CollegeMsg/CollegeMsg.txt', usecols=(0, 1, 2), dtype=int)
 
         graph, histories, history_lengths, choice_sets, \
-            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
 
         m = len(histories)
-
-        print('Samples', m)
-        print('Largest choice set', max(choice_set_lengths).item())
-        print('Longest path', max(history_lengths).item() + 1)
-        print('Num nodes', len(graph.nodes))
-        print('Num edges:', len(graph.edges))
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
                                                          choice_set_lengths, choices, shuffle=False)
@@ -491,15 +483,9 @@ class EmailEUDataset(Dataset):
         timestamped_edges = np.loadtxt(f'{DATA_DIR}/email-Eu/email-Eu-core-temporal.txt', usecols=(0, 1, 2), dtype=int)
 
         graph, histories, history_lengths, choice_sets, \
-            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
 
         m = len(histories)
-
-        print('Samples', m)
-        print('Largest choice set', max(choice_set_lengths).item())
-        print('Longest path', max(history_lengths).item() + 1)
-        print('Num nodes', len(graph.nodes))
-        print('Num edges:', len(graph.edges))
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
                                                          choice_set_lengths, choices, shuffle=False)
@@ -519,15 +505,9 @@ class MathOverflowDataset(Dataset):
         timestamped_edges = np.loadtxt(f'{DATA_DIR}/mathoverflow/sx-mathoverflow.txt', usecols=(0, 1, 2), dtype=int)
 
         graph, histories, history_lengths, choice_sets, \
-            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
 
         m = len(histories)
-
-        print('Samples', m)
-        print('Largest choice set', max(choice_set_lengths).item())
-        print('Longest path', max(history_lengths).item() + 1)
-        print('Num nodes', len(graph.nodes))
-        print('Num edges:', len(graph.edges))
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
                                                          choice_set_lengths, choices, shuffle=False)
@@ -547,15 +527,9 @@ class FacebookWallDataset(Dataset):
         timestamped_edges = np.loadtxt(f'{DATA_DIR}/facebook-wosn-wall/out.facebook-wosn-wall', usecols=(0, 1, 3), dtype=int)
 
         graph, histories, history_lengths, choice_sets, \
-            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
 
         m = len(histories)
-
-        print('Samples', m)
-        print('Largest choice set', max(choice_set_lengths).item())
-        print('Longest path', max(history_lengths).item() + 1)
-        print('Num nodes', len(graph.nodes))
-        print('Num edges:', len(graph.edges))
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
                                                          choice_set_lengths, choices, shuffle=False)
@@ -575,14 +549,8 @@ class EmailW3CDataset(Dataset):
         timestamped_edges = np.loadtxt(f'{DATA_DIR}/email-W3C/email-W3C.txt', usecols=(0, 1, 2)).astype(int)
 
         graph, histories, history_lengths, choice_sets, \
-            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
         m = len(histories)
-
-        print('Samples', m)
-        print('Largest choice set', max(choice_set_lengths).item())
-        print('Longest path', max(history_lengths).item() + 1)
-        print('Num nodes', len(graph.nodes))
-        print('Num edges:', len(graph.edges))
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
                                                          choice_set_lengths, choices, shuffle=False)
@@ -610,14 +578,8 @@ class EmailW3CCoreDataset(Dataset):
         timestamped_edges = np.array(filtered_edges)
 
         graph, histories, history_lengths, choice_sets, \
-            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
         m = len(histories)
-
-        print('Samples', m)
-        print('Largest choice set', max(choice_set_lengths).item())
-        print('Longest path', max(history_lengths).item() + 1)
-        print('Num nodes', len(graph.nodes))
-        print('Num edges:', len(graph.edges))
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
                                                          choice_set_lengths, choices, shuffle=False)
@@ -637,20 +599,15 @@ class SMSADataset(Dataset):
         timestamped_edges = np.loadtxt(f'{DATA_DIR}/sms/SD01.txt', usecols=(0, 1, 2)).astype(int)
 
         graph, histories, history_lengths, choice_sets, \
-            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
         m = len(histories)
-
-        print('Samples', m)
-        print('Largest choice set', max(choice_set_lengths).item())
-        print('Longest path', max(history_lengths).item() + 1)
-        print('Num nodes', len(graph.nodes))
-        print('Num edges:', len(graph.edges))
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
                                                          choice_set_lengths, choices, shuffle=False)
 
         with open(file_name, 'wb') as f:
             pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
 
 class SMSBDataset(Dataset):
     name = 'sms-b'
@@ -663,14 +620,8 @@ class SMSBDataset(Dataset):
         timestamped_edges = np.loadtxt(f'{DATA_DIR}/sms/SD02.txt', usecols=(0, 1, 2)).astype(int)
 
         graph, histories, history_lengths, choice_sets, \
-            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
         m = len(histories)
-
-        print('Samples', m)
-        print('Largest choice set', max(choice_set_lengths).item())
-        print('Longest path', max(history_lengths).item() + 1)
-        print('Num nodes', len(graph.nodes))
-        print('Num edges:', len(graph.edges))
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
                                                          choice_set_lengths, choices, shuffle=False)
@@ -690,14 +641,111 @@ class SMSCDataset(Dataset):
         timestamped_edges = np.loadtxt(f'{DATA_DIR}/sms/SD03.txt', usecols=(0, 1, 2)).astype(int)
 
         graph, histories, history_lengths, choice_sets, \
-            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges[timestamped_edges[:, 2].argsort(), :-1])
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
         m = len(histories)
 
-        print('Samples', m)
-        print('Largest choice set', max(choice_set_lengths).item())
-        print('Longest path', max(history_lengths).item() + 1)
-        print('Num nodes', len(graph.nodes))
-        print('Num edges:', len(graph.edges))
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+class WikiTalkDataset(Dataset):
+    name = 'wiki-talk'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/wiki-talk/wiki-talk-temporal.txt', usecols=(0, 1, 2)).astype(int)
+
+        # pick out edges from 2004
+        timestamped_edges = timestamped_edges[np.logical_and(1072915200 <= timestamped_edges[:, 2],
+                                                             timestamped_edges[:, 2] < 1104537600)]
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
+        m = len(histories)
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+class RedditHyperlinkDataset(Dataset):
+    name = 'reddit-hyperlink'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        body_df = pd.read_csv(f'{DATA_DIR}/reddit-hyperlinks/soc-redditHyperlinks-body.tsv', sep='\t',
+                              parse_dates=['TIMESTAMP'], usecols=['SOURCE_SUBREDDIT', 'TARGET_SUBREDDIT', 'TIMESTAMP'])
+
+        title_df = pd.read_csv(f'{DATA_DIR}/reddit-hyperlinks/soc-redditHyperlinks-title.tsv', sep='\t',
+                              parse_dates=['TIMESTAMP'], usecols=['SOURCE_SUBREDDIT', 'TARGET_SUBREDDIT', 'TIMESTAMP'])
+
+        df = pd.concat([body_df, title_df], ignore_index=True)
+        stacked = df[['SOURCE_SUBREDDIT', 'TARGET_SUBREDDIT']].stack()
+        df[['SOURCE_SUBREDDIT', 'TARGET_SUBREDDIT']] = pd.Series(stacked.factorize()[0], index=stacked.index).unstack()
+        df.sort_values('TIMESTAMP', inplace=True)
+
+        timestamped_edges = df.astype(np.int64).values
+        timestamped_edges[:, 2] //= 10**9
+
+        # Select only links before 2015
+        timestamped_edges = timestamped_edges[timestamped_edges[:, 2] < 1420070400]
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
+        m = len(histories)
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+class BitcoinOTCDataset(Dataset):
+    name = 'bitcoin-otc'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/bitcoin-otc/soc-sign-bitcoinotc.csv', usecols=(0, 1, 3), delimiter=',').astype(int)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
+        m = len(histories)
+
+        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+class BitcoinAlphaDataset(Dataset):
+    name = 'bitcoin-alpha'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        timestamped_edges = np.loadtxt(f'{DATA_DIR}/bitcoin-alpha/soc-sign-bitcoinalpha.csv', usecols=(0, 1, 3), delimiter=',').astype(int)
+
+        graph, histories, history_lengths, choice_sets, \
+            choice_sets_with_features, choice_set_lengths, choices = cls.build_triadic_closure_data(timestamped_edges)
+        m = len(histories)
 
         train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_sets_with_features,
                                                          choice_set_lengths, choices, shuffle=False)
@@ -707,13 +755,10 @@ class SMSCDataset(Dataset):
 
 
 if __name__ == '__main__':
-    SMSADataset.print_stats()
-    SMSBDataset.print_stats()
-    SMSCDataset.print_stats()
-    EmailEnronDataset.print_stats()
-    EmailEUDataset.print_stats()
-    FacebookWallDataset.print_stats()
-    CollegeMsgDataset.print_stats()
-    EmailW3CDataset.print_stats()
-    MathOverflowDataset.print_stats()
+    for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
+                    BitcoinAlphaDataset, BitcoinOTCDataset,
+                    SMSADataset, SMSBDataset, SMSCDataset,
+                    EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+                    FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
+        dataset.print_stats()
 

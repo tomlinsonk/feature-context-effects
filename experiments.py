@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 
 from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
-    EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset
+    EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
+    RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
     FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em
 
@@ -204,57 +205,48 @@ def run_triadic_closure_baselines(dataset):
     print('Random:', correct / total)
 
 
-def run_likelihood_ratio_test(dataset, lr):
+def run_likelihood_ratio_test(dataset, lr, wd):
     torch.random.manual_seed(0)
     np.random.seed(0)
-
-    model = run_feature_model_full_dataset(FeatureMNL, dataset, lr, 0.001)
+    model = run_feature_model_full_dataset(FeatureMNL, dataset, lr, wd)
     print(model.weights)
 
     torch.random.manual_seed(0)
     np.random.seed(0)
 
-    model = run_feature_model_full_dataset(FeatureContextMixture, dataset, lr, 0.001)
+    model = run_feature_model_full_dataset(FeatureContextMixture, dataset, lr, wd)
     print(model.weights, model.intercepts, model.slopes)
 
     torch.random.manual_seed(0)
     np.random.seed(0)
-    model = run_feature_model_full_dataset(FeatureCDM, dataset, lr, 0.001)
+    model = run_feature_model_full_dataset(FeatureCDM, dataset, lr, wd)
     print(model.weights, model.contexts)
 
 
 if __name__ == '__main__':
-    # run_likelihood_ratio_test(FacebookWallDataset, 0.005)
-    # run_likelihood_ratio_test(EmailEnronDataset, 0.005)
-    # run_likelihood_ratio_test(CollegeMsgDataset, 0.005)
-    # run_likelihood_ratio_test(EmailEUDataset, 0.005)
-    # run_likelihood_ratio_test(EmailW3CDataset, 0.005)
-    # run_likelihood_ratio_test(MathOverflowDataset, 0.005)
-    # run_likelihood_ratio_test(SMSADataset, 0.005)
-    # run_likelihood_ratio_test(SMSBDataset, 0.005)
-    # run_likelihood_ratio_test(SMSCDataset, 0.005)
+    learning_rate = 0.005
+    weight_decay = 0.001
 
-    # for dataset in [FacebookWallDataset, EmailEnronDataset, EmailEUDataset, EmailW3CDataset, CollegeMsgDataset,
-    #                 SMSADataset, SMSBDataset, SMSCDataset, MathOverflowDataset]:
-    #
-    #
-    #
-    #     torch.random.manual_seed(0)
-    #     np.random.seed(0)
-    #     run_feature_model_train_data(FeatureMNL, dataset, 0.005, 0.001)
-    #
-    #     torch.random.manual_seed(0)
-    #     np.random.seed(0)
-    #     run_feature_model_train_data(FeatureCDM, dataset, 0.005, 0.001)
-    #
-    #     torch.random.manual_seed(0)
-    #     np.random.seed(0)
-    #     run_feature_model_train_data(FeatureContextMixture, dataset, 0.005, 0.001)
+    for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
+                    BitcoinAlphaDataset, BitcoinOTCDataset,
+                    SMSADataset, SMSBDataset, SMSCDataset,
+                    EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+                    FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
 
-    graph, train_data, val_data, test_data = EmailEnronDataset.load()
+        run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
 
-    all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(len(train_data))]
-    context_mixture_em(all_data, 3)
+        torch.random.manual_seed(0)
+        np.random.seed(0)
+        run_feature_model_train_data(FeatureMNL, dataset, learning_rate, weight_decay)
+
+        torch.random.manual_seed(0)
+        np.random.seed(0)
+        run_feature_model_train_data(FeatureCDM, dataset, learning_rate, weight_decay)
+
+        torch.random.manual_seed(0)
+        np.random.seed(0)
+        run_feature_model_train_data(FeatureContextMixture, dataset, learning_rate, weight_decay)
+
 
 
 

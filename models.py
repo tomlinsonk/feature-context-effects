@@ -318,6 +318,48 @@ class FeatureContextMixture(nn.Module):
         return nn.functional.nll_loss(y_pred, y)
 
 
+class FeatureSelector(nn.Module):
+    name = 'feature_selector'
+
+    def __init__(self, feature_index):
+        super().__init__()
+
+        self.feature_index = feature_index
+
+    def forward(self, choice_set_features, choice_set_lengths):
+        return nn.functional.log_softmax(choice_set_features[:, :, self.feature_index], 1)
+
+    def loss(self, y_pred, y):
+        """
+        The error in inferred log-probabilities given observations
+        :param y_pred: log(choice probabilities)
+        :param y: observed choices
+        :return: the loss
+        """
+
+        return nn.functional.nll_loss(y_pred, y)
+
+
+class RandomSelector(nn.Module):
+    name = 'random_selector'
+
+    def __init__(self, _):
+        super().__init__()
+
+    def forward(self, choice_set_features, choice_set_lengths):
+        return torch.log(nn.functional.normalize(torch.rand(choice_set_features.size()[:-1]), dim=1, p=1))
+
+    def loss(self, y_pred, y):
+        """
+        The error in inferred log-probabilities given observations
+        :param y_pred: log(choice probabilities)
+        :param y: observed choices
+        :return: the loss
+        """
+
+        return nn.functional.nll_loss(y_pred, y)
+
+
 class LSTM(nn.Module):
 
     name = 'lstm'
