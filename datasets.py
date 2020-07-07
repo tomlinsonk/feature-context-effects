@@ -19,6 +19,7 @@ DATA_DIR = 'data'
 class Dataset(ABC):
 
     name = ''
+    num_features = 6
 
     @classmethod
     def load(cls):

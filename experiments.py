@@ -11,7 +11,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
     RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
-    FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em
+    FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture
 
 training_methods = {HistoryCDM: train_history_cdm, HistoryMNL: train_history_mnl, LSTM: train_lstm, FeatureMNL: train_feature_mnl,
                     FeatureCDM: train_feature_cdm, FeatureContextMixture: train_feature_context_mixture}
@@ -37,7 +37,7 @@ def run_feature_model_full_dataset(method, dataset, lr, wd):
 
     print(f'Training {method.name} on {dataset.name} (lr={lr}, wd={wd})')
 
-    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](all_data, val_data, 3, lr=lr, weight_decay=wd, compute_val_stats=False)
+    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](all_data, val_data, dataset.num_features, lr=lr, weight_decay=wd, compute_val_stats=False)
     torch.save(model.state_dict(), f'{method.name}_{dataset.name}_params_{lr}_{wd}.pt')
     with open(f'{method.name}_{dataset.name}_losses_{lr}_{wd}.pickle', 'wb') as f:
         pickle.dump((train_losses, train_accs, val_losses, val_accs), f)
@@ -48,11 +48,9 @@ def run_feature_model_full_dataset(method, dataset, lr, wd):
 def run_feature_model_train_data(method, dataset, lr, wd):
     graph, train_data, val_data, test_data = dataset.load()
 
-    context_mixture_em(train_data, 3)
-
     print(f'Training {method.name} on {dataset.name}, training data only (lr={lr}, wd={wd})')
 
-    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](train_data[3:], val_data[3:], 3, lr=lr, weight_decay=wd, compute_val_stats=True)
+    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](train_data[3:], val_data[3:], dataset.num_features, lr=lr, weight_decay=wd, compute_val_stats=True)
     torch.save(model.state_dict(), f'{method.name}_{dataset.name}_train_params_{lr}_{wd}.pt')
     with open(f'{method.name}_{dataset.name}_train_losses_{lr}_{wd}.pickle', 'wb') as f:
         pickle.dump((train_losses, train_accs, val_losses, val_accs), f)
