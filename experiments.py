@@ -255,7 +255,7 @@ def learn_binned_mnl(dataset):
 
         all_bin_idx = np.digitize(x_var, bins)
 
-        mnl_utilities = np.zeros((num_bins, 3))
+        mnl_utilities = np.zeros((num_bins, n_feats))
         bin_counts = np.zeros(num_bins)
         bin_choice_set_log_lengths = np.zeros(num_bins)
         bin_losses = np.zeros(num_bins)
@@ -269,7 +269,7 @@ def learn_binned_mnl(dataset):
                 continue
 
             bin_data = [torch.tensor(choice_set_features[bin_idx]), torch.tensor(choice_set_lengths[bin_idx]), torch.tensor(choices[bin_idx])]
-            mnl, train_losses, _, _, _ = train_feature_mnl(bin_data, bin_data, 6, lr=0.01, weight_decay=0.001)
+            mnl, train_losses, _, _, _ = train_feature_mnl(bin_data, bin_data, n_feats, lr=0.01, weight_decay=0.001)
             mnl_utilities[bin] = mnl.weights.detach().numpy()
             bin_choice_set_log_lengths[bin] = np.mean(np.log(choice_set_lengths[bin_idx]))
             bin_losses[bin] = torch.nn.functional.nll_loss(mnl(*bin_data[:-1]), bin_data[-1], reduction='sum').item()
