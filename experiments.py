@@ -5,6 +5,7 @@ import choix
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
@@ -12,6 +13,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
     FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture
+
 
 training_methods = {HistoryCDM: train_history_cdm, HistoryMNL: train_history_mnl, LSTM: train_lstm, FeatureMNL: train_feature_mnl,
                     FeatureCDM: train_feature_cdm, FeatureContextMixture: train_feature_context_mixture}
@@ -203,6 +205,81 @@ def run_triadic_closure_baselines(dataset):
     print('Random:', correct / total)
 
 
+def compile_choice_data(dataset):
+    graph, train_data, val_data, test_data = dataset.load()
+
+    n_feats = dataset.num_features
+
+    histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [
+        torch.cat([train_data[i], val_data[i], test_data[i]]).numpy() for i in range(len(train_data))]
+
+    chosen_item_features = [list() for _ in range(n_feats)]
+
+    choice_set_mean_features = [list() for _ in range(n_feats)]
+
+    for i in range(len(choice_set_features)):
+        choice = choices[i]
+        choice_set = choice_set_features[i, :choice_set_lengths[i]]
+
+        for feature in range(n_feats):
+            chosen_item_features[feature].append(choice_set[choice, feature])
+
+            # First three features are log(feat), so take mean of exp(log(feat))
+            if feature < 3:
+                choice_set_mean_features[feature].append(np.mean(np.exp(choice_set[:, feature])))
+            # Next three are 1/log(t), don't transform
+            else:
+                choice_set_mean_features[feature].append(np.mean(choice_set[:, feature]))
+
+    return histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices, \
+        np.array(chosen_item_features), np.array(choice_set_mean_features)
+
+
+def learn_binned_mnl(dataset):
+    print(f'Learning binned MNLs for {dataset.name}')
+    num_bins = 100
+
+    n_feats = dataset.num_features
+
+    histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices, \
+        chosen_item_features, choice_set_mean_features = compile_choice_data(dataset)
+
+    data = [None for _ in range(n_feats)]
+
+    for i, x_var in enumerate(choice_set_mean_features):
+        # First three feats are log feats, so need to treat differently
+        x_min = min([x for x in x_var if x > 0]) * 0.8 if i < 3 else min(x_var) * 0.8
+        x_max = max(x_var) * 1.2
+
+        values, bins = np.histogram(x_var, bins=np.logspace(np.log(x_min), np.log(x_max), num_bins) if i < 3 else np.linspace(x_min, x_max, num_bins))
+
+        all_bin_idx = np.digitize(x_var, bins)
+
+        mnl_utilities = np.zeros((num_bins, 3))
+        bin_counts = np.zeros(num_bins)
+        bin_choice_set_log_lengths = np.zeros(num_bins)
+        bin_losses = np.zeros(num_bins)
+
+        for bin in tqdm(range(num_bins)):
+            bin_idx = all_bin_idx == bin
+
+            bin_counts[bin] = np.count_nonzero(bin_idx)
+
+            if bin_counts[bin] == 0:
+                continue
+
+            bin_data = [torch.tensor(choice_set_features[bin_idx]), torch.tensor(choice_set_lengths[bin_idx]), torch.tensor(choices[bin_idx])]
+            mnl, train_losses, _, _, _ = train_feature_mnl(bin_data, bin_data, 3, lr=0.01, weight_decay=0.001)
+            mnl_utilities[bin] = mnl.weights.detach().numpy()
+            bin_choice_set_log_lengths[bin] = np.mean(np.log(choice_set_lengths[bin_idx]))
+            bin_losses[bin] = torch.nn.functional.nll_loss(mnl(*bin_data[:-1]), bin_data[-1], reduction='sum').item()
+
+        data[i] = bins, mnl_utilities, bin_counts, bin_choice_set_log_lengths, bin_losses
+
+    with open(f'{dataset.name}_binned_mnl_params.pickle', 'wb') as f:
+        pickle.dump(data, f)
+
+
 def run_likelihood_ratio_test(dataset, lr, wd):
     torch.random.manual_seed(0)
     np.random.seed(0)
@@ -231,19 +308,20 @@ if __name__ == '__main__':
                     EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
                     FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
 
-        run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
-
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(FeatureMNL, dataset, learning_rate, weight_decay)
-
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(FeatureCDM, dataset, learning_rate, weight_decay)
-
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(FeatureContextMixture, dataset, learning_rate, weight_decay)
+        # run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
+        #
+        # torch.random.manual_seed(0)
+        # np.random.seed(0)
+        # run_feature_model_train_data(FeatureMNL, dataset, learning_rate, weight_decay)
+        #
+        # torch.random.manual_seed(0)
+        # np.random.seed(0)
+        # run_feature_model_train_data(FeatureCDM, dataset, learning_rate, weight_decay)
+        #
+        # torch.random.manual_seed(0)
+        # np.random.seed(0)
+        # run_feature_model_train_data(FeatureContextMixture, dataset, learning_rate, weight_decay)
+        learn_binned_mnl(dataset)
 
 
 

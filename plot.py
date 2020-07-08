@@ -228,81 +228,6 @@ def plot_dataset_stats():
     plt.show()
 
 
-def compile_choice_data(dataset):
-    graph, train_data, val_data, test_data = dataset.load()
-
-    n_feats = dataset.num_features
-
-    histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [
-        torch.cat([train_data[i], val_data[i], test_data[i]]).numpy() for i in range(len(train_data))]
-
-    chosen_item_features = [list() for _ in range(n_feats)]
-
-    choice_set_mean_features = [list() for _ in range(n_feats)]
-
-    for i in range(len(choice_set_features)):
-        choice = choices[i]
-        choice_set = choice_set_features[i, :choice_set_lengths[i]]
-
-        for feature in range(n_feats):
-            chosen_item_features[feature].append(choice_set[choice, feature])
-
-            # First three features are log(feat), so take mean of exp(log(feat))
-            if feature < 3:
-                choice_set_mean_features[feature].append(np.mean(np.exp(choice_set[:, feature])))
-            # Next three are 1/log(t), don't transform
-            else:
-                choice_set_mean_features[feature].append(np.mean(choice_set[:, feature]))
-
-    return histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices, \
-        np.array(chosen_item_features), np.array(choice_set_mean_features)
-
-
-def learn_binned_mnl(dataset):
-    print(f'Learning binned MNLs for {dataset.name}')
-    num_bins = 100
-
-    n_feats = dataset.num_features
-
-    histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices, \
-        chosen_item_features, choice_set_mean_features = compile_choice_data(dataset)
-
-    data = [None for _ in range(n_feats)]
-
-    for i, x_var in enumerate(choice_set_mean_features):
-        # First three feats are log feats, so need to treat differently
-        x_min = min([x for x in x_var if x > 0]) * 0.8 if i < 3 else min(x_var) * 0.8
-        x_max = max(x_var) * 1.2
-
-        values, bins = np.histogram(x_var, bins=np.logspace(np.log(x_min), np.log(x_max), num_bins) if i < 3 else np.linspace(x_min, x_max, num_bins))
-
-        all_bin_idx = np.digitize(x_var, bins)
-
-        mnl_utilities = np.zeros((num_bins, 3))
-        bin_counts = np.zeros(num_bins)
-        bin_choice_set_log_lengths = np.zeros(num_bins)
-        bin_losses = np.zeros(num_bins)
-
-        for bin in tqdm(range(num_bins)):
-            bin_idx = all_bin_idx == bin
-
-            bin_counts[bin] = np.count_nonzero(bin_idx)
-
-            if bin_counts[bin] == 0:
-                continue
-
-            bin_data = [torch.tensor(choice_set_features[bin_idx]), torch.tensor(choice_set_lengths[bin_idx]), torch.tensor(choices[bin_idx])]
-            mnl, train_losses, _, _, _ = train_feature_mnl(bin_data, bin_data, 3, lr=0.01, weight_decay=0.001)
-            mnl_utilities[bin] = mnl.weights.detach().numpy()
-            bin_choice_set_log_lengths[bin] = np.mean(np.log(choice_set_lengths[bin_idx]))
-            bin_losses[bin] = torch.nn.functional.nll_loss(mnl(*bin_data[:-1]), bin_data[-1], reduction='sum').item()
-
-        data[i] = bins, mnl_utilities, bin_counts, bin_choice_set_log_lengths, bin_losses
-
-    with open(f'{dataset.name}_binned_mnl_params.pickle', 'wb') as f:
-        pickle.dump(data, f)
-
-
 def plot_binned_mnl(dataset, model_param_fname):
     with open(f'{dataset.name}_binned_mnl_params.pickle', 'rb') as f:
         data = pickle.load(f)
@@ -390,27 +315,27 @@ def plot_binned_mnl(dataset, model_param_fname):
     plt.close()
 
 
-def examine_choice_set_size_effects(dataset):
-    in_degree_ratios, out_degree_ratios, reciprocity_ratios, chosen_in_degrees, chosen_out_degrees, \
-        chosen_reciprocities, mean_available_in_degrees, mean_available_out_degrees, mean_available_reciprocities, choice_set_lengths, \
-        histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = compile_choice_data(dataset)
-
-    plt.set_cmap('plasma')
-
-    fig, axes = plt.subplots(3, 1, figsize=(4, 10))
-    plt.subplots_adjust(wspace=0.1, hspace=0.1)
-
-    for j, (x_variable, x_name) in enumerate([(mean_available_in_degrees, 'In-degree'), (mean_available_out_degrees, 'Out-degree'), (mean_available_reciprocities, 'Reciprocity')]):
-
-        axes[j].scatter(choice_set_lengths, x_variable, s=10, alpha=0.4, marker='.')
-        axes[j].set_ylabel(f'Mean {x_name}')
-        axes[j].set_xlabel('Choice Set Size')
-        axes[j].set_xscale('log')
-
-        if j < 2:
-            axes[j].set_yscale('log')
-
-    plt.savefig(f'{dataset.name}-choice-set-lengths.pdf', bbox_inches='tight')
+# def examine_choice_set_size_effects(dataset):
+#     in_degree_ratios, out_degree_ratios, reciprocity_ratios, chosen_in_degrees, chosen_out_degrees, \
+#         chosen_reciprocities, mean_available_in_degrees, mean_available_out_degrees, mean_available_reciprocities, choice_set_lengths, \
+#         histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = compile_choice_data(dataset)
+#
+#     plt.set_cmap('plasma')
+#
+#     fig, axes = plt.subplots(3, 1, figsize=(4, 10))
+#     plt.subplots_adjust(wspace=0.1, hspace=0.1)
+#
+#     for j, (x_variable, x_name) in enumerate([(mean_available_in_degrees, 'In-degree'), (mean_available_out_degrees, 'Out-degree'), (mean_available_reciprocities, 'Reciprocity')]):
+#
+#         axes[j].scatter(choice_set_lengths, x_variable, s=10, alpha=0.4, marker='.')
+#         axes[j].set_ylabel(f'Mean {x_name}')
+#         axes[j].set_xlabel('Choice Set Size')
+#         axes[j].set_xscale('log')
+#
+#         if j < 2:
+#             axes[j].set_yscale('log')
+#
+#     plt.savefig(f'{dataset.name}-choice-set-lengths.pdf', bbox_inches='tight')
 
 
 def compute_all_accuracies(datasets):
