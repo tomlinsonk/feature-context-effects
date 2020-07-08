@@ -11,9 +11,15 @@ from tqdm import tqdm
 
 from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
-    EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset
+    EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
+    RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
     FeatureContextMixture, train_model, FeatureSelector, RandomSelector
+
+
+PARAM_DIR = 'params/triadic-closure-6-feats'
+RESULT_DIR = 'results/triadic-closure-6-feats'
+PLOT_DIR = 'plots'
 
 
 def load_model(Model, n, dim, param_fname):
@@ -225,75 +231,50 @@ def plot_dataset_stats():
 def compile_choice_data(dataset):
     graph, train_data, val_data, test_data = dataset.load()
 
+    n_feats = dataset.num_features
+
     histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [
         torch.cat([train_data[i], val_data[i], test_data[i]]).numpy() for i in range(len(train_data))]
 
-    in_degree_ratios = []
-    shared_neighbors_ratios = []
-    reciprocity_ratios = []
+    chosen_item_features = [list() for _ in range(n_feats)]
 
-    chosen_in_degrees = []
-    chosen_shared_neighbors = []
-    chosen_reciprocities = []
-
-    mean_available_in_degrees = []
-    mean_available_shared_neighbors = []
-    mean_available_reciprocities = []
+    choice_set_mean_features = [list() for _ in range(n_feats)]
 
     for i in range(len(choice_set_features)):
         choice = choices[i]
         choice_set = choice_set_features[i, :choice_set_lengths[i]]
 
-        # Convert reciprocities to -1/1 and log-degrees to degrees
-        # choice_set[:, 0] = np.exp(choice_set[:, 0])
-        # choice_set[:, 1] = np.exp(choice_set[:, 1])
+        for feature in range(n_feats):
+            chosen_item_features[feature].append(choice_set[choice, feature])
 
-        in_degree_ratios.append(choice_set[choice, 0] / np.mean(choice_set[:, 0]))
-        shared_neighbors_ratios.append(choice_set[choice, 1] / np.mean(choice_set[:, 1]))
-        # reciprocity_ratios.append(torch.nn.functional.softmax(torch.tensor(choice_set[:, 2]), dim=0)[choice].item() * choice_set_lengths[i])
+            # First three features are log(feat), so take mean of exp(log(feat))
+            if feature < 3:
+                choice_set_mean_features[feature].append(np.mean(np.exp(choice_set[:, feature])))
+            # Next three are 1/log(t), don't transform
+            else:
+                choice_set_mean_features[feature].append(np.mean(choice_set[:, feature]))
 
-        reciprocity_ratios.append((choice_set[choice, 2] / np.mean(choice_set[:, 2])) if np.mean(choice_set[:, 2]) > 0 else 1)
-
-        chosen_in_degrees.append(choice_set[choice, 0])
-        chosen_shared_neighbors.append(choice_set[choice, 1])
-        chosen_reciprocities.append(choice_set[choice, 2])
-
-        mean_available_in_degrees.append(np.mean(np.exp(choice_set[:, 0])))
-        mean_available_shared_neighbors.append(np.mean(np.exp(choice_set[:, 1])))
-        mean_available_reciprocities.append(np.mean(np.exp(choice_set[:, 2])))
-
-    in_degree_ratios = np.array(in_degree_ratios)
-    shared_neighbors_ratios = np.array(shared_neighbors_ratios)
-    reciprocity_ratios = np.array(reciprocity_ratios)
-
-    chosen_in_degrees = np.array(chosen_in_degrees)
-    chosen_shared_neighbors = np.array(chosen_shared_neighbors)
-    chosen_reciprocities = np.array(chosen_reciprocities)
-
-    mean_available_in_degrees = np.array(mean_available_in_degrees)
-    mean_available_shared_neighbors = np.array(mean_available_shared_neighbors)
-    mean_available_reciprocities = np.array(mean_available_reciprocities)
-
-    return in_degree_ratios, shared_neighbors_ratios, reciprocity_ratios, chosen_in_degrees, chosen_shared_neighbors, \
-        chosen_reciprocities, mean_available_in_degrees, mean_available_shared_neighbors, mean_available_reciprocities, choice_set_lengths, \
-        histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices
+    return histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices, \
+        np.array(chosen_item_features), np.array(choice_set_mean_features)
 
 
 def learn_binned_mnl(dataset):
     print(f'Learning binned MNLs for {dataset.name}')
     num_bins = 100
 
-    in_degree_ratios, out_degree_ratios, reciprocity_ratios, chosen_in_degrees, chosen_out_degrees, \
-        chosen_reciprocities, mean_available_in_degrees, mean_available_shared_neighbors, mean_available_reciprocities, choice_set_lengths, \
-        histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = compile_choice_data(dataset)
+    n_feats = dataset.num_features
 
-    data = [None, None, None]
+    histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices, \
+        chosen_item_features, choice_set_mean_features = compile_choice_data(dataset)
 
-    for i, x_var in enumerate([mean_available_in_degrees, mean_available_shared_neighbors, mean_available_reciprocities]):
-        x_min = min([x for x in x_var if x > 0]) * 0.8
+    data = [None for _ in range(n_feats)]
+
+    for i, x_var in enumerate(choice_set_mean_features):
+        # First three feats are log feats, so need to treat differently
+        x_min = min([x for x in x_var if x > 0]) * 0.8 if i < 3 else min(x_var) * 0.8
         x_max = max(x_var) * 1.2
 
-        values, bins = np.histogram(x_var, bins=np.logspace(np.log(x_min), np.log(x_max), num_bins))
+        values, bins = np.histogram(x_var, bins=np.logspace(np.log(x_min), np.log(x_max), num_bins) if i < 3 else np.linspace(x_min, x_max, num_bins))
 
         all_bin_idx = np.digitize(x_var, bins)
 
@@ -432,26 +413,25 @@ def examine_choice_set_size_effects(dataset):
     plt.savefig(f'{dataset.name}-choice-set-lengths.pdf', bbox_inches='tight')
 
 
-def plot_all_training_accuracies():
-    datasets = [EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-                    SMSADataset, SMSBDataset, SMSCDataset, CollegeMsgDataset, MathOverflowDataset, FacebookWallDataset]
-    fig, axes = plt.subplots(3, 1, figsize=(14, 11))
+def compute_all_accuracies(datasets):
+    methods = [FeatureMNL, FeatureCDM, FeatureContextMixture, FeatureSelector, FeatureSelector, FeatureSelector,
+                 FeatureSelector, FeatureSelector, FeatureSelector, RandomSelector]
 
-    losses = [list() for _ in range(7)]
-    accs = [list() for _ in range(7)]
-    optimistic_mrrs = [list() for _ in range(7)]
-    pessimistic_mrrs = [list() for _ in range(7)]
+    losses = [list() for _ in range(len(methods))]
+    accs = [list() for _ in range(len(methods))]
+    optimistic_mrrs = [list() for _ in range(len(methods))]
+    pessimistic_mrrs = [list() for _ in range(len(methods))]
 
     for i, dataset in enumerate(datasets):
-        print(dataset.name)
+        print('Computing accuracies for', dataset.name)
         graph, train_data, val_data, test_data = dataset.load()
 
-        histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = train_data
+        histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
 
-        for j, method in enumerate([FeatureMNL, FeatureCDM, FeatureContextMixture, FeatureSelector, FeatureSelector, FeatureSelector, RandomSelector]):
-            param_fname = f'{method.name}_{dataset.name}_train_params_0.005_0.001.pt'
+        for j, method in enumerate(methods):
+            param_fname = f'{PARAM_DIR}/{method.name}_{dataset.name}_params_0.005_0.001.pt'
 
-            model_param = 3 if j < 3 else j - 3
+            model_param = dataset.num_features if j < 3 else j - 3
             model = load_feature_model(method, model_param, param_fname)
 
             pred = model(choice_sets_with_features, choice_set_lengths)
@@ -469,42 +449,46 @@ def plot_all_training_accuracies():
             optimistic_mrrs[j].append((1 / optimistic_ranks[np.arange(len(choices)), choices]).sum() / len(choices))
             pessimistic_mrrs[j].append((1 / pessimistic_ranks[np.arange(len(choices)), choices]).sum() / len(choices))
 
-    bar_width = 0.1
-
-    xs = [np.arange(9) + (i * bar_width) for i in range(-3, 4)]
-    method_names = ['Feature MNL', 'Feature CDM', 'Context Mixture', 'In-Degree', 'Shared Neighbors', 'Reciprocal Weight', 'Random']
-
-    losses = np.array(losses)
-    accs = np.array(accs)
     mrrs = (np.array(optimistic_mrrs) + np.array(pessimistic_mrrs)) / 2
+
+    with open(f'{RESULT_DIR}/all_prediction_results.pickle', 'wb') as f:
+        pickle.dump([np.array(losses), np.array(accs), np.array(mrrs)], f)
+
+
+def plot_all_accuracies(datasets):
+    with open(f'{RESULT_DIR}/all_prediction_results.pickle', 'rb') as f:
+        losses, accs, mrrs = pickle.load(f)
+
+    fig, axes = plt.subplots(3, 1, figsize=(14, 11))
+
+    bar_width = 0.08
+    xs = [np.arange(len(datasets)) + ((i + 0.5) * bar_width) for i in range(-5, 5)]
+    method_names = ['Feature MNL', 'Feature CDM', 'Context Mixture', 'In-Degree', 'Shared Neighbors', 'Reciprocal Weight', 'Time Since Send', 'Time Since Receive', 'Time Since Reciprocation', 'Random']
 
     min_nll_indices = np.argmin(losses, axis=0)
     max_acc_indices = np.argmax(accs, axis=0)
     max_mrr_indices = np.argmax(mrrs, axis=0)
 
-    min_nll_xs = (np.arange(9) - 3 * bar_width) + (min_nll_indices * bar_width)
-    max_acc_xs = (np.arange(9) - 3 * bar_width) + (max_acc_indices * bar_width)
-    max_mrr_xs = (np.arange(9) - 3 * bar_width) + (max_mrr_indices * bar_width)
+    min_nll_xs = (np.arange(len(datasets)) - 3 * bar_width) + (min_nll_indices * bar_width)
+    max_acc_xs = (np.arange(len(datasets)) - 3 * bar_width) + (max_acc_indices * bar_width)
+    max_mrr_xs = (np.arange(len(datasets)) - 3 * bar_width) + (max_mrr_indices * bar_width)
 
-    min_nll_ys = losses[min_nll_indices, np.arange(9)] + 0.2
-    max_acc_ys = accs[max_acc_indices, np.arange(9)] + 0.01
-    max_mrr_ys = mrrs[max_mrr_indices, np.arange(9)] + 0.02
+    min_nll_ys = losses[min_nll_indices, np.arange(len(datasets))] + 0.2
+    max_acc_ys = accs[max_acc_indices, np.arange(len(datasets))] + 0.01
+    max_mrr_ys = mrrs[max_mrr_indices, np.arange(len(datasets))] + 0.02
 
     axes[0].scatter(min_nll_xs, min_nll_ys, marker='*', color='black')
     axes[1].scatter(max_acc_xs, max_acc_ys, marker='*', color='black')
     axes[2].scatter(max_mrr_xs, max_mrr_ys, marker='*', color='black')
 
-    for i in range(7):
+    for i in range(10):
         axes[0].bar(xs[i], losses[i], edgecolor='white', label=method_names[i], width=bar_width)
         axes[1].bar(xs[i], accs[i], edgecolor='white', label=method_names[i], width=bar_width)
         axes[2].bar(xs[i], mrrs[i], edgecolor='white', label=method_names[i], width=bar_width)
 
-    axes[0].set_xticks(np.arange(9))
-    axes[0].set_xticklabels([dataset.name for dataset in datasets])
-    axes[1].set_xticks(np.arange(9))
-    axes[1].set_xticklabels([dataset.name for dataset in datasets])
-    axes[2].set_xticks(np.arange(9))
-    axes[2].set_xticklabels([dataset.name for dataset in datasets])
+    for i in range(3):
+        axes[i].set_xticks(np.arange(len(datasets)))
+        axes[i].set_xticklabels([dataset.name for dataset in datasets], rotation=13)
 
     axes[0].set_ylabel('Mean Test NLL')
     axes[1].set_ylabel('Test Accuracy')
@@ -512,11 +496,16 @@ def plot_all_training_accuracies():
 
     axes[1].legend()
 
-    plt.savefig('plots/test_performance_with_baselines_train.pdf', bbox_inches='tight')
+    plt.savefig(f'{PLOT_DIR}/test_performance_with_baselines.pdf', bbox_inches='tight')
 
 
 if __name__ == '__main__':
-    plot_all_training_accuracies()
+    datasets = [EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+                SMSADataset, SMSBDataset, SMSCDataset, CollegeMsgDataset, MathOverflowDataset, FacebookWallDataset,
+                WikiTalkDataset, RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset]
+
+    compute_all_accuracies(datasets)
+    plot_all_accuracies(datasets)
 
     # for dataset in [FacebookWallDataset, EmailEnronDataset, EmailEUDataset, EmailW3CDataset, CollegeMsgDataset,
     #                 SMSADataset, SMSBDataset, SMSCDataset, MathOverflowDataset]:
