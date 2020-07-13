@@ -729,7 +729,7 @@ def context_mixture_em(train_data, num_features):
 
         prev_nll = nll
         nll = torch.nn.functional.nll_loss(test_model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
-        print('NLL:', nll.item())
+        print('NLL:', nll)
 
     model = FeatureContextMixture(num_features)
     model.intercepts.data = B
