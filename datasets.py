@@ -799,7 +799,7 @@ class SyntheticMNLDataset(Dataset):
                         pbar.update(1)
                         sender_neighbors = set(graph.successors(chooser)).union(set(graph.predecessors(chooser)))
 
-                        choice_set_features = np.array([[np.log(graph.in_degree(node)),
+                        choice_set_features = [[np.log(graph.in_degree(node)),
                                                 np.log(len(set(graph.successors(node)).union(
                                                     set(graph.predecessors(node))).intersection(sender_neighbors))),
                                                 0 if not graph.has_edge(node, chooser) else np.log(
@@ -810,9 +810,9 @@ class SyntheticMNLDataset(Dataset):
                                                     2 + timestamp - last_incoming_edge[node]),
                                                 0 if not graph.has_edge(node, chooser) else 1 / np.log(
                                                     2 + timestamp - graph[node][chooser]['last_timestamp'])]
-                                               for node in choice_set])
+                                               for node in choice_set]
 
-                        utilities = (choice_set_features * mnl_utilities).sum(axis=1)
+                        utilities = (np.array(choice_set_features) * mnl_utilities).sum(axis=1)
 
                         target = np.random.choice(choice_set, p=scipy.special.softmax(utilities))
 
