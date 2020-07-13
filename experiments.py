@@ -10,7 +10,7 @@ from tqdm import tqdm
 from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
-    RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset
+    RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset, SyntheticMNLDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
     FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em
 
@@ -312,13 +312,15 @@ if __name__ == '__main__':
     learning_rate = 0.005
     weight_decay = 0.001
 
-    for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
-                    BitcoinAlphaDataset, BitcoinOTCDataset,
-                    SMSADataset, SMSBDataset, SMSCDataset,
-                    EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-                    FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
+    learn_binned_mnl(SyntheticMNLDataset)
 
-        train_context_mixture_em(dataset)
+    # for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
+    #                 BitcoinAlphaDataset, BitcoinOTCDataset,
+    #                 SMSADataset, SMSBDataset, SMSCDataset,
+    #                 EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+    #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
+    #
+    #     train_context_mixture_em(dataset)
 
         # run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
         #
