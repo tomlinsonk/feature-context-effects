@@ -672,6 +672,8 @@ def context_mixture_em(train_data, num_features):
 
     choice_set_features, choice_set_lengths, choices = train_data
 
+    choice_set_features = choice_set_features.float()
+
     B = torch.ones(n, n, requires_grad=False).float()
     C = torch.zeros(n, n, requires_grad=False).float()
     alpha = torch.ones(n, requires_grad=False).float() / n
