@@ -298,6 +298,8 @@ def run_likelihood_ratio_test(dataset, lr, wd):
 
 
 def train_context_mixture_em(dataset):
+    torch.set_num_threads(30)
+
     print('Running EM for', dataset.name)
     graph, train_data, val_data, test_data = dataset.load()
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
