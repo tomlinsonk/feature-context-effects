@@ -305,7 +305,7 @@ def train_context_mixture_em(dataset):
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
 
     model = context_mixture_em(all_data, dataset.num_features)
-    torch.save(model.state_dict(), f'context_mixture_em_{dataset.name}_params_{lr}_{wd}.pt')
+    torch.save(model.state_dict(), f'context_mixture_em_{dataset.name}_params.pt')
 
 
 if __name__ == '__main__':
