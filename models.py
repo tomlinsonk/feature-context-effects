@@ -327,7 +327,10 @@ class FeatureSelector(nn.Module):
         self.feature_index = feature_index
 
     def forward(self, choice_set_features, choice_set_lengths):
-        return nn.functional.log_softmax(choice_set_features[:, :, self.feature_index], 1)
+        batch_size, max_choice_set_len, num_feats = choice_set_features.size()
+        utilities = choice_set_features[:, :, self.feature_index]
+        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
+        return nn.functional.log_softmax(utilities, 1)
 
     def loss(self, y_pred, y):
         """
@@ -347,7 +350,11 @@ class RandomSelector(nn.Module):
         super().__init__()
 
     def forward(self, choice_set_features, choice_set_lengths):
-        return torch.log(nn.functional.normalize(torch.rand(choice_set_features.size()[:-1]), dim=1, p=1))
+        batch_size, max_choice_set_len, num_feats = choice_set_features.size()
+        utilities = torch.rand(choice_set_features.size()[:-1])
+        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
+
+        return nn.functional.log_softmax(utilities, 1)
 
     def loss(self, y_pred, y):
         """
@@ -411,18 +418,18 @@ class EMAlgorithmQ(nn.Module):
 
         self.num_features = num_features
         self.r = r
-        self.mean_feat_matrix = (torch.ones(self.num_features, 1) @ mean_cs_features[:, None, :])
+        self.mean_cs_features = mean_cs_features
 
         self.B = nn.Parameter(torch.ones(self.num_features, self.num_features), requires_grad=True)
         self.C = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
 
         self.device = device
 
-    def forward(self, choice_set_features, choice_set_lengths, choices):
+    def forward(self, choice_set_features, choice_set_lengths, choices, indices):
         batch_size, max_choice_set_len, _ = choice_set_features.size()
 
         # Use linear context model to compute utility matrices for each sample
-        utility_matrices = self.B + self.C * self.mean_feat_matrix
+        utility_matrices = self.B + self.C * (torch.ones(self.num_features, 1) @ self.mean_cs_features[indices, None, :])
 
         # Compute utility of each item under each feature MNL
         utilities = choice_set_features @ utility_matrices
@@ -431,7 +438,7 @@ class EMAlgorithmQ(nn.Module):
         # Compute MNL log-probs for each feature
         log_probs = nn.functional.log_softmax(utilities, 1)[torch.arange(batch_size), choices]
 
-        return - (self.r * log_probs).sum()
+        return - (self.r[indices] * log_probs).sum()
 
 
 def toy_example():
@@ -663,9 +670,7 @@ def train_lstm(n, train_data, val_data, dim=64, lr=1e-4, weight_decay=1e-4, beta
 def context_mixture_em(train_data, num_features):
     n = num_features
 
-
-
-    histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = train_data
+    choice_set_features, choice_set_lengths, choices = train_data
 
     B = torch.ones(n, n, requires_grad=False).float()
     C = torch.zeros(n, n, requires_grad=False).float()
@@ -676,7 +681,12 @@ def context_mixture_em(train_data, num_features):
     mean_choice_set_features = choice_set_features.sum(1) / choice_set_lengths[:, None]
     nan_idx = torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]
 
-    while True:
+    train_data_loader = DataLoader([choice_set_features, choice_set_lengths, choices, torch.arange(len(choices))], batch_size=128)
+
+    nll = np.inf
+    prev_nll = np.inf
+
+    while nll * 1.00001 < prev_nll or nll == np.inf:
         # Use learned linear context model to compute utility matrices for each sample
         utility_matrices = B + C * (torch.ones(n, 1) @ mean_choice_set_features[:, None, :])
 
@@ -688,42 +698,42 @@ def context_mixture_em(train_data, num_features):
         log_probs = nn.functional.log_softmax(utilities, 1)[torch.arange(batch_size), choices]
 
         responsibilities = nn.functional.softmax(log_probs + torch.log(alpha), 1)
+        alpha = responsibilities.sum(0) / batch_size
 
-        Q = EMAlgorithmQ(3, responsibilities, mean_choice_set_features)
-        optimizer = torch.optim.LBFGS(Q.parameters())
+        Q = EMAlgorithmQ(num_features, responsibilities, mean_choice_set_features)
+        optimizer = torch.optim.Adam(Q.parameters(), lr=0.1, weight_decay=0, amsgrad=True)
 
         prev_loss = np.inf
-        loss = Q(choice_set_features, choice_set_lengths, choices)
+        total_loss = np.inf
 
-        while prev_loss > loss * 1.0001:
-            prev_loss = loss
-            loss = Q(choice_set_features, choice_set_lengths, choices)
-
-            def closure():
+        for epoch in range(25):
+            prev_loss = total_loss
+            total_loss = 0
+            for batch in train_data_loader:
+                loss = Q(*batch)
+                total_loss += loss.item()
                 optimizer.zero_grad()
-                loss = Q(choice_set_features, choice_set_lengths, choices)
                 loss.backward()
-                return loss
-
-            optimizer.step(closure)
-
-        print('B:', Q.B)
-        print('C:', Q.C)
+                optimizer.step()
 
         B = Q.B.clone().detach()
         C = Q.C.clone().detach()
 
-        alpha = responsibilities.sum(0) / batch_size
-
-        print('new alpha:', alpha)
-
-        test_model = FeatureContextMixture(3)
+        test_model = FeatureContextMixture(num_features)
         test_model.intercepts.data = B
         test_model.slopes.data = C
         test_model.weights.data = alpha
 
-        print('NLL:', torch.nn.functional.nll_loss(test_model(choice_set_features, choice_set_lengths), choices, reduction='sum').item())
+        prev_nll = nll
+        nll = torch.nn.functional.nll_loss(test_model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
+        print('NLL:', nll.item())
 
+    model = FeatureContextMixture(num_features)
+    model.intercepts.data = B
+    model.slopes.data = C
+    model.weights.data = alpha
+
+    return model
 
 
 if __name__ == '__main__':

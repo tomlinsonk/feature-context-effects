@@ -12,8 +12,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
     RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
-    FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture
-
+    FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em
 
 training_methods = {HistoryCDM: train_history_cdm, HistoryMNL: train_history_mnl, LSTM: train_lstm, FeatureMNL: train_feature_mnl,
                     FeatureCDM: train_feature_cdm, FeatureContextMixture: train_feature_context_mixture}
@@ -298,6 +297,14 @@ def run_likelihood_ratio_test(dataset, lr, wd):
     print(model.weights, model.contexts)
 
 
+def train_context_mixture_em(dataset):
+    graph, train_data, val_data, test_data = dataset.load()
+    all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
+
+    model = context_mixture_em(all_data, dataset.num_features)
+    torch.save(model.state_dict(), f'context_mixture_em_{dataset.name}_params_{lr}_{wd}.pt')
+
+
 if __name__ == '__main__':
     learning_rate = 0.005
     weight_decay = 0.001
@@ -307,6 +314,8 @@ if __name__ == '__main__':
                     SMSADataset, SMSBDataset, SMSCDataset,
                     EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
                     FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
+
+        train_context_mixture_em(dataset)
 
         # run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
         #
@@ -321,7 +330,7 @@ if __name__ == '__main__':
         # torch.random.manual_seed(0)
         # np.random.seed(0)
         # run_feature_model_train_data(FeatureContextMixture, dataset, learning_rate, weight_decay)
-        learn_binned_mnl(dataset)
+        # learn_binned_mnl(dataset)
 
 
 
