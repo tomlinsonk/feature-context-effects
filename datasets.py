@@ -784,53 +784,55 @@ class SyntheticMNLDataset(Dataset):
 
         mnl_utilities = np.array([2, 1, 3, 1, 3, 5])
 
-        while triangle_closures < target_triangle_closures:
-            timestamp += np.random.poisson(5)
-            chooser = np.random.choice(nodes)
+        with tqdm(total=target_triangle_closures) as pbar:
+            while triangle_closures < target_triangle_closures:
+                timestamp += np.random.poisson(5)
+                chooser = np.random.choice(nodes)
 
-            target = None
+                target = None
 
-            if graph.out_degree(chooser) > 0:
-                intermediate = np.random.choice(list(graph.neighbors(chooser)))
-                choice_set = [node for node in graph.neighbors(intermediate) if node != chooser]
-                if len(choice_set) > 2 and np.random.random() < p_triangle_closure:
-                    triangle_closures += 1
-                    sender_neighbors = set(graph.successors(chooser)).union(set(graph.predecessors(chooser)))
+                if graph.out_degree(chooser) > 0:
+                    intermediate = np.random.choice(list(graph.neighbors(chooser)))
+                    choice_set = [node for node in graph.neighbors(intermediate) if node != chooser]
+                    if len(choice_set) > 2 and np.random.random() < p_triangle_closure:
+                        triangle_closures += 1
+                        pbar.update(1)
+                        sender_neighbors = set(graph.successors(chooser)).union(set(graph.predecessors(chooser)))
 
-                    choice_set_features = np.array([[np.log(graph.in_degree(node)),
-                                            np.log(len(set(graph.successors(node)).union(
-                                                set(graph.predecessors(node))).intersection(sender_neighbors))),
-                                            0 if not graph.has_edge(node, chooser) else np.log(
-                                                1 + graph[node][chooser]['weight']),
-                                            0 if node not in last_outgoing_edge else 1 / np.log(
-                                                2 + timestamp - last_outgoing_edge[node]),
-                                            0 if node not in last_incoming_edge else 1 / np.log(
-                                                2 + timestamp - last_incoming_edge[node]),
-                                            0 if not graph.has_edge(node, chooser) else 1 / np.log(
-                                                2 + timestamp - graph[node][chooser]['last_timestamp'])]
-                                           for node in choice_set])
+                        choice_set_features = np.array([[np.log(graph.in_degree(node)),
+                                                np.log(len(set(graph.successors(node)).union(
+                                                    set(graph.predecessors(node))).intersection(sender_neighbors))),
+                                                0 if not graph.has_edge(node, chooser) else np.log(
+                                                    1 + graph[node][chooser]['weight']),
+                                                0 if node not in last_outgoing_edge else 1 / np.log(
+                                                    2 + timestamp - last_outgoing_edge[node]),
+                                                0 if node not in last_incoming_edge else 1 / np.log(
+                                                    2 + timestamp - last_incoming_edge[node]),
+                                                0 if not graph.has_edge(node, chooser) else 1 / np.log(
+                                                    2 + timestamp - graph[node][chooser]['last_timestamp'])]
+                                               for node in choice_set])
 
-                    utilities = (choice_set_features * mnl_utilities).sum(axis=1)
+                        utilities = (choice_set_features * mnl_utilities).sum(axis=1)
 
-                    target = np.random.choice(choice_set, p=scipy.special.softmax(utilities))
+                        target = np.random.choice(choice_set, p=scipy.special.softmax(utilities))
 
-                    choice_sets.append(choice_set)
-                    choice_sets_with_features.append(choice_set_features)
-                    choices.append(choice_set.index(target))
+                        choice_sets.append(choice_set)
+                        choice_sets_with_features.append(choice_set_features)
+                        choices.append(choice_set.index(target))
 
-            if target is None:
-                target = chooser
-                while target == chooser:
-                    target = np.random.choice(nodes)
+                if target is None:
+                    target = chooser
+                    while target == chooser:
+                        target = np.random.choice(nodes)
 
-            if graph.has_edge(chooser, target):
-                graph[chooser][target]['weight'] = graph[chooser][target]['weight'] + 1
-                graph[chooser][target]['last_timestamp'] = timestamp
-            else:
-                graph.add_edge(chooser, target, weight=1, last_timestamp=timestamp)
+                if graph.has_edge(chooser, target):
+                    graph[chooser][target]['weight'] = graph[chooser][target]['weight'] + 1
+                    graph[chooser][target]['last_timestamp'] = timestamp
+                else:
+                    graph.add_edge(chooser, target, weight=1, last_timestamp=timestamp)
 
-            last_outgoing_edge[chooser] = timestamp
-            last_incoming_edge[target] = timestamp
+                last_outgoing_edge[chooser] = timestamp
+                last_incoming_edge[target] = timestamp
 
         largest_choice_set = max(len(choice_set) for choice_set in choice_sets)
 
@@ -871,7 +873,6 @@ class SyntheticMNLDataset(Dataset):
 
 
 
-
 if __name__ == '__main__':
     # for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
     #                 BitcoinAlphaDataset, BitcoinOTCDataset,
@@ -880,5 +881,4 @@ if __name__ == '__main__':
     #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
     #     dataset.print_stats()
 
-    test = SyntheticMNLDataset()
-    test.generate()
+    SyntheticMNLDataset.print_stats()
