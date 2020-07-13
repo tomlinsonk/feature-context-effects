@@ -864,7 +864,9 @@ class SyntheticMNLDataset(Dataset):
         graph, choice_sets, choice_sets_with_features, choice_set_lengths, choices = SyntheticMNLDataset.generate()
         m = len(choices)
 
-        train_data, val_data, test_data = cls.data_split(m, choice_sets,
+        train_data, val_data, test_data = cls.data_split(m, torch.zeros_like(choices),
+                                                         torch.zeros_like(choices),
+                                                         choice_sets,
                                                          choice_sets_with_features,
                                                          choice_set_lengths, choices, shuffle=False)
 
