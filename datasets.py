@@ -5,6 +5,7 @@ import pickle
 import random
 
 import numpy as np
+import scipy
 import torch
 from abc import ABC, abstractmethod
 import matplotlib.pyplot as plt
@@ -755,11 +756,129 @@ class BitcoinAlphaDataset(Dataset):
             pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
 
 
-if __name__ == '__main__':
-    for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
-                    BitcoinAlphaDataset, BitcoinOTCDataset,
-                    SMSADataset, SMSBDataset, SMSCDataset,
-                    EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-                    FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
-        dataset.print_stats()
+class SyntheticMNLDataset(Dataset):
+    name = 'synthetic-mnl'
 
+    @classmethod
+    def generate(cls):
+        random.seed(0)
+        np.random.seed(0)
+
+        nodes = list(range(20000))
+        target_triangle_closures = 50000
+        p_triangle_closure = 0.25
+
+        triangle_closures = 0
+
+        graph = nx.DiGraph()
+        graph.add_nodes_from(nodes)
+
+        timestamp = 0
+
+        last_outgoing_edge = dict()
+        last_incoming_edge = dict()
+
+        choice_sets = []
+        choice_sets_with_features = []
+        choices = []
+
+        mnl_utilities = np.array([2, 1, 3, 1, 3, 5])
+
+        while triangle_closures < target_triangle_closures:
+            timestamp += np.random.poisson(5)
+            chooser = np.random.choice(nodes)
+
+            target = None
+
+            if graph.out_degree(chooser) > 0:
+                intermediate = np.random.choice(list(graph.neighbors(chooser)))
+                choice_set = [node for node in graph.neighbors(intermediate) if node != chooser]
+                if len(choice_set) > 2 and np.random.random() < p_triangle_closure:
+                    triangle_closures += 1
+                    sender_neighbors = set(graph.successors(chooser)).union(set(graph.predecessors(chooser)))
+
+                    choice_set_features = np.array([[np.log(graph.in_degree(node)),
+                                            np.log(len(set(graph.successors(node)).union(
+                                                set(graph.predecessors(node))).intersection(sender_neighbors))),
+                                            0 if not graph.has_edge(node, chooser) else np.log(
+                                                1 + graph[node][chooser]['weight']),
+                                            0 if node not in last_outgoing_edge else 1 / np.log(
+                                                2 + timestamp - last_outgoing_edge[node]),
+                                            0 if node not in last_incoming_edge else 1 / np.log(
+                                                2 + timestamp - last_incoming_edge[node]),
+                                            0 if not graph.has_edge(node, chooser) else 1 / np.log(
+                                                2 + timestamp - graph[node][chooser]['last_timestamp'])]
+                                           for node in choice_set])
+
+                    utilities = (choice_set_features * mnl_utilities).sum(axis=1)
+
+                    target = np.random.choice(choice_set, p=scipy.special.softmax(utilities))
+
+                    choice_sets.append(choice_set)
+                    choice_sets_with_features.append(choice_set_features)
+                    choices.append(choice_set.index(target))
+
+            if target is None:
+                target = chooser
+                while target == chooser:
+                    target = np.random.choice(nodes)
+
+            if graph.has_edge(chooser, target):
+                graph[chooser][target]['weight'] = graph[chooser][target]['weight'] + 1
+                graph[chooser][target]['last_timestamp'] = timestamp
+            else:
+                graph.add_edge(chooser, target, weight=1, last_timestamp=timestamp)
+
+            last_outgoing_edge[chooser] = timestamp
+            last_incoming_edge[target] = timestamp
+
+        largest_choice_set = max(len(choice_set) for choice_set in choice_sets)
+
+        n = len(graph.nodes)
+        cls.index_nodes(graph)
+
+        choice_set_lengths = []
+
+        for choice_set in choice_sets:
+            choice_set_lengths.append(len(choice_set))
+            choice_set[:] = [graph.nodes[node]['index'] for node in choice_set] + [n] * (
+                    largest_choice_set - len(choice_set))
+
+        for choice_set_with_features in choice_sets_with_features:
+            choice_set_with_features += [[0] * cls.num_features for _ in range(largest_choice_set - len(choice_set_with_features))]
+
+        choice_sets = torch.tensor(choice_sets)
+        choice_sets_with_features = torch.tensor(choice_sets_with_features)
+        choice_set_lengths = torch.tensor(choice_set_lengths)
+        choices = torch.tensor(choices)
+
+        return graph, choice_sets, choice_sets_with_features, choice_set_lengths, choices
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        graph, choice_sets, choice_sets_with_features, choice_set_lengths, choices = SyntheticMNLDataset.generate()
+        m = len(choices)
+
+        train_data, val_data, test_data = cls.data_split(m, choice_sets,
+                                                         choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
+
+
+
+
+if __name__ == '__main__':
+    # for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
+    #                 BitcoinAlphaDataset, BitcoinOTCDataset,
+    #                 SMSADataset, SMSBDataset, SMSCDataset,
+    #                 EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+    #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
+    #     dataset.print_stats()
+
+    test = SyntheticMNLDataset()
+    test.generate()
