@@ -861,7 +861,7 @@ class SyntheticMNLDataset(Dataset):
         random.seed(0)
         np.random.seed(0)
 
-        graph, choice_sets, choice_sets_with_features, choice_set_lengths, choices = SyntheticMNLDataset.generate()
+        graph, choice_sets, choice_sets_with_features, choice_set_lengths, choices = cls.generate()
         m = len(choices)
 
         train_data, val_data, test_data = cls.data_split(m, torch.zeros_like(choices),
@@ -987,7 +987,7 @@ class SyntheticCDMDataset(Dataset):
         random.seed(0)
         np.random.seed(0)
 
-        graph, choice_sets, choice_sets_with_features, choice_set_lengths, choices = SyntheticMNLDataset.generate()
+        graph, choice_sets, choice_sets_with_features, choice_set_lengths, choices = cls.generate()
         m = len(choices)
 
         train_data, val_data, test_data = cls.data_split(m, torch.zeros_like(choices),

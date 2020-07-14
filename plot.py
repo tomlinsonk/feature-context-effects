@@ -14,7 +14,7 @@ from scipy.ndimage.filters import gaussian_filter1d
 from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
-    RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SyntheticMNLDataset
+    RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SyntheticMNLDataset, SyntheticCDMDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
     FeatureContextMixture, train_model, FeatureSelector, RandomSelector
 
@@ -387,7 +387,7 @@ def compute_all_accuracies(datasets):
         histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
 
         for j, method in enumerate(methods):
-            param_fname = f'{PARAM_DIR}/{method.name}_{dataset.name}_params_0.005_0.001.pt'
+            param_fname = f'{PARAM_DIR}/{method.name}_{dataset.name}_params_0.005_0.001.pt' if method != FeatureContextMixture else f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt'
 
             model_param = dataset.num_features if j < 3 else j - 3
             model = load_feature_model(method, model_param, param_fname)
@@ -452,7 +452,7 @@ def plot_all_accuracies(datasets):
 
     axes[1].legend(bbox_to_anchor=(1.01, 0.5), loc='center left')
 
-    plt.savefig(f'{PLOT_DIR}/test_performance_with_baselines.pdf', bbox_inches='tight')
+    plt.savefig(f'{PLOT_DIR}/test_performance_with_baselines_em.pdf', bbox_inches='tight')
 
 
 if __name__ == '__main__':
@@ -460,12 +460,12 @@ if __name__ == '__main__':
                 SMSADataset, SMSBDataset, SMSCDataset, CollegeMsgDataset, MathOverflowDataset, FacebookWallDataset,
                 WikiTalkDataset, RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset]
 
-    compute_all_accuracies(datasets)
+    # compute_all_accuracies(datasets)
     # examine_choice_set_size_effects(datasets)
 
-    plot_all_accuracies(datasets)
+    # plot_all_accuracies(datasets)
 
-    for dataset in datasets:
+    for dataset in [SyntheticCDMDataset]:
         print(dataset.name)
         plot_binned_mnl(dataset, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
 
