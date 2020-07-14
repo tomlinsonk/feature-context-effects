@@ -764,9 +764,9 @@ class SyntheticMNLDataset(Dataset):
         random.seed(0)
         np.random.seed(0)
 
-        nodes = list(range(20000))
+        nodes = list(range(1000))
         target_triangle_closures = 50000
-        p_triangle_closure = 0.25
+        p_triangle_closure = 0.1
 
         triangle_closures = 0
 
@@ -850,7 +850,7 @@ class SyntheticMNLDataset(Dataset):
             choice_set_with_features += [[0] * cls.num_features for _ in range(largest_choice_set - len(choice_set_with_features))]
 
         choice_sets = torch.tensor(choice_sets)
-        choice_sets_with_features = torch.tensor(choice_sets_with_features)
+        choice_sets_with_features = torch.tensor(choice_sets_with_features).float()
         choice_set_lengths = torch.tensor(choice_set_lengths)
         choices = torch.tensor(choices)
 
@@ -882,5 +882,6 @@ if __name__ == '__main__':
     #                 EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
     #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
     #     dataset.print_stats()
+
 
     SyntheticMNLDataset.print_stats()

@@ -14,7 +14,7 @@ from scipy.ndimage.filters import gaussian_filter1d
 from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
-    RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset
+    RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SyntheticMNLDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
     FeatureContextMixture, train_model, FeatureSelector, RandomSelector
 
@@ -461,11 +461,11 @@ if __name__ == '__main__':
                 WikiTalkDataset, RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset]
 
     # compute_all_accuracies(datasets)
-    examine_choice_set_size_effects(datasets)
+    # examine_choice_set_size_effects(datasets)
 
     # plot_all_accuracies(datasets)
 
-    # for dataset in datasets:
-    #     print(dataset.name)
-    #     plot_binned_mnl(dataset, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_0.005_0.001.pt')
+    for dataset in [SyntheticMNLDataset]:
+        print(dataset.name)
+        plot_binned_mnl(dataset, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_0.005_0.001.pt')
 
