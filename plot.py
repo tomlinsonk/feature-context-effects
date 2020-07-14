@@ -309,15 +309,15 @@ def plot_binned_mnl(dataset, model_param_fname):
     all_data = [choice_set_features, choice_set_lengths, choices]
     wls_nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
 
-    mnl = load_feature_model(FeatureMNL, n_feats, model_param_fname.replace('feature_context_mixture', 'feature_mnl'))
+    mnl = load_feature_model(FeatureMNL, n_feats, f'{PARAM_DIR}/feature_mnl_{dataset.name}_params_0.005_0.001.pt')
     mnl_nll = torch.nn.functional.nll_loss(mnl(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
 
-    cdm = load_feature_model(FeatureCDM, n_feats, model_param_fname.replace('feature_context_mixture', 'feature_cdm'))
+    cdm = load_feature_model(FeatureCDM, n_feats, f'{PARAM_DIR}/feature_cdm_{dataset.name}_params_0.005_0.001.pt')
     cdm_nll = torch.nn.functional.nll_loss(cdm(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
 
     axes[0, 1].text(0.37, 0.67, f'Mix NLL: {sgd_nll:.0f}\nWLS NLL: {wls_nll:.0f}\nMNL NLL: {mnl_nll:.0f}\nCDM NLL: {cdm_nll:.0f}', transform=axes[0, 1].transAxes)
 
-    plt.savefig(f'{dataset.name}-mixture-fit-feature-utilities.pdf', bbox_inches='tight')
+    plt.savefig(f'{dataset.name}-mixture-em-fit-feature-utilities.pdf', bbox_inches='tight')
     plt.close()
 
 
@@ -460,12 +460,12 @@ if __name__ == '__main__':
                 SMSADataset, SMSBDataset, SMSCDataset, CollegeMsgDataset, MathOverflowDataset, FacebookWallDataset,
                 WikiTalkDataset, RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset]
 
-    # compute_all_accuracies(datasets)
+    compute_all_accuracies(datasets)
     # examine_choice_set_size_effects(datasets)
 
-    # plot_all_accuracies(datasets)
+    plot_all_accuracies(datasets)
 
-    for dataset in [SyntheticMNLDataset]:
+    for dataset in datasets:
         print(dataset.name)
-        plot_binned_mnl(dataset, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_0.005_0.001.pt')
+        plot_binned_mnl(dataset, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
 
