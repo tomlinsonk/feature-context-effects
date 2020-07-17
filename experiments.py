@@ -240,11 +240,7 @@ def learn_binned_mnl(dataset):
     data = [None for _ in range(n_feats)]
 
     for i, x_var in enumerate(choice_set_mean_features):
-        # First three feats are log feats, so need to treat differently
-        x_min = min([x for x in x_var if x > 0]) * 0.8 if i < 3 else min(x_var) * 0.8
-        x_max = max(x_var) * 1.2
-
-        values, bins = np.histogram(x_var, bins=np.logspace(np.log(x_min), np.log(x_max), num_bins) if i < 3 else np.linspace(x_min, x_max, num_bins))
+        values, bins = np.histogram(x_var, bins=np.linspace(min(x_var), max(x_var), num_bins))
 
         all_bin_idx = np.digitize(x_var, bins)
 

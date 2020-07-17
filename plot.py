@@ -20,8 +20,8 @@ from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, Feature
     FeatureContextMixture, train_model, FeatureSelector, RandomSelector
 
 
-PARAM_DIR = 'params/triadic-closure-6-feats'
-RESULT_DIR = 'results/triadic-closure-6-feats'
+PARAM_DIR = 'params/triadic-closure-6-standard-feats'
+RESULT_DIR = 'results/triadic-closure-6-standard-feats'
 PLOT_DIR = 'plots'
 
 
@@ -261,8 +261,7 @@ def plot_binned_mnl(dataset, model_param_fname):
         x_max = bins[max([i for i in range(len(bins)) if bin_counts[i] > 0])]
 
         for row, y_name in enumerate(['Log In-degree', 'Log Shared Nbrs.', 'Log Recip. Weight', 'Send Recency', 'Receive Recency', 'Recip. Recency']):
-            take_log = col < 3
-            with_const = sm.add_constant(np.log(bins[nonempty]) if take_log else bins[nonempty])
+            with_const = sm.add_constant(bins[nonempty])
             mod_wls = sm.WLS(mnl_utilities[nonempty, row], with_const, weights=bin_counts[nonempty])
             res_wls = mod_wls.fit()
             wls_intercepts[row, col], wls_slopes[row, col] = res_wls.params
@@ -270,7 +269,7 @@ def plot_binned_mnl(dataset, model_param_fname):
             axes[row, col].scatter(bins, mnl_utilities[:, row], alpha=1, s=bin_counts, marker='o', c=bin_choice_set_log_lengths)
             axes[row, col].scatter(bins, mnl_utilities[:, row], alpha=1, s=1, marker='.', color='white')
 
-            xs = np.log(bins) if take_log else bins
+            xs = bins
             axes[row, col].plot(bins, list(map(lambda x: intercepts[row, col] + x * slopes[row, col], xs)), label='mixture model')
             axes[row, col].plot(bins, list(map(lambda x: wls_intercepts[row, col] + x * wls_slopes[row, col], xs)), label='WLS')
 
@@ -472,7 +471,7 @@ def visualize_context_effects(datasets):
         # print('base utils:', model.intercepts.data)
         # print('slops:', )
 
-        slopes = model.intercepts.data.numpy()
+        slopes = model.slopes.data.numpy()
         slopes /= np.max(np.abs(slopes))
 
         all_slopes.append(slopes)
@@ -495,7 +494,7 @@ def visualize_context_effects(datasets):
     axes[3, 3].matshow(np.std(all_slopes, axis=0), cmap=cmap, vmin=-1, vmax=1)
     axes[3, 3].set_title('Std Dev', pad=0.1)
 
-    plt.savefig('learned_em_intercepts.pdf', bbox_inches='tight')
+    plt.savefig('learned_em_slopes.pdf', bbox_inches='tight')
     plt.close()
 
 
@@ -506,7 +505,7 @@ if __name__ == '__main__':
                 MathOverflowDataset, RedditHyperlinkDataset]
 
 
-    visualize_context_effects(datasets)
+    # visualize_context_effects(datasets)
 
 
     # compute_all_accuracies(datasets)
@@ -514,7 +513,7 @@ if __name__ == '__main__':
 
     # plot_all_accuracies(datasets)
 
-    # for dataset in [SyntheticCDMDataset]:
-    #     print(dataset.name)
-    #     plot_binned_mnl(dataset, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
+    for dataset in datasets + [SyntheticCDMDataset, SyntheticMNLDataset]:
+        print(dataset.name)
+        plot_binned_mnl(dataset, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
 
