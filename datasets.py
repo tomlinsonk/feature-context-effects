@@ -33,6 +33,28 @@ class Dataset(ABC):
             return pickle.load(f)
 
     @classmethod
+    def load_standardized(cls):
+        graph, train_data, val_data, test_data = cls.load()
+        data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(len(train_data))]
+        histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = data
+
+        all_feature_vecs = choice_set_features[torch.arange(choice_sets.size(1))[None, :] < choice_set_lengths[:, None]]
+        means = all_feature_vecs.mean(0)
+        stds = all_feature_vecs.std(0)
+
+        train_data[3][torch.arange(train_data[3].size(1))[None, :] < train_data[4][:, None]] -= means
+        train_data[3][torch.arange(train_data[3].size(1))[None, :] < train_data[4][:, None]] /= stds
+
+        val_data[3][torch.arange(val_data[3].size(1))[None, :] < val_data[4][:, None]] -= means
+        val_data[3][torch.arange(val_data[3].size(1))[None, :] < val_data[4][:, None]] /= stds
+
+        test_data[3][torch.arange(test_data[3].size(1))[None, :] < test_data[4][:, None]] -= means
+        test_data[3][torch.arange(test_data[3].size(1))[None, :] < test_data[4][:, None]] /= stds
+
+        return graph, train_data, val_data, test_data, means, stds
+
+
+    @classmethod
     @abstractmethod
     def load_into_pickle(cls, file_name):
         pass
@@ -1001,11 +1023,10 @@ class SyntheticCDMDataset(Dataset):
 
 
 if __name__ == '__main__':
-    # for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
-    #                 BitcoinAlphaDataset, BitcoinOTCDataset,
-    #                 SMSADataset, SMSBDataset, SMSCDataset,
-    #                 EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-    #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
-    #     dataset.print_stats()
+    for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
+                    BitcoinAlphaDataset, BitcoinOTCDataset,
+                    SMSADataset, SMSBDataset, SMSCDataset,
+                    EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+                    FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
+        dataset.load_standardized()
 
-    SyntheticCDMDataset.print_stats()

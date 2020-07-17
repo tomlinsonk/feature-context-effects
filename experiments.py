@@ -32,7 +32,7 @@ def run_model(method, dataset, dim, lr, wd, beta=None, learn_beta=None):
 
 
 def run_feature_model_full_dataset(method, dataset, lr, wd):
-    graph, train_data, val_data, test_data = dataset.load()
+    graph, train_data, val_data, test_data, means, stds = dataset.load_normalized()
 
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
 
@@ -47,7 +47,7 @@ def run_feature_model_full_dataset(method, dataset, lr, wd):
 
 
 def run_feature_model_train_data(method, dataset, lr, wd):
-    graph, train_data, val_data, test_data = dataset.load()
+    graph, train_data, val_data, test_data, means, stds = dataset.load_normalized()
 
     print(f'Training {method.name} on {dataset.name}, training data only (lr={lr}, wd={wd})')
 
@@ -205,7 +205,7 @@ def run_triadic_closure_baselines(dataset):
 
 
 def compile_choice_data(dataset):
-    graph, train_data, val_data, test_data = dataset.load()
+    graph, train_data, val_data, test_data, means, stds = dataset.load_normalized()
 
     n_feats = dataset.num_features
 
@@ -222,13 +222,7 @@ def compile_choice_data(dataset):
 
         for feature in range(n_feats):
             chosen_item_features[feature].append(choice_set[choice, feature])
-
-            # First three features are log(feat), so take mean of exp(log(feat))
-            if feature < 3:
-                choice_set_mean_features[feature].append(np.mean(np.exp(choice_set[:, feature])))
-            # Next three are 1/log(t), don't transform
-            else:
-                choice_set_mean_features[feature].append(np.mean(choice_set[:, feature]))
+            choice_set_mean_features[feature].append(np.mean(choice_set[:, feature]))
 
     return histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices, \
         np.array(chosen_item_features), np.array(choice_set_mean_features)
@@ -301,7 +295,7 @@ def train_context_mixture_em(dataset):
     torch.set_num_threads(30)
 
     print('Running EM for', dataset.name)
-    graph, train_data, val_data, test_data = dataset.load()
+    graph, train_data, val_data, test_data, means, stds = dataset.load_normalized()
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
 
     model = context_mixture_em(all_data, dataset.num_features)
@@ -312,12 +306,12 @@ if __name__ == '__main__':
     learning_rate = 0.005
     weight_decay = 0.001
 
-    for dataset in [SyntheticCDMDataset
-                    # WikiTalkDataset, RedditHyperlinkDataset,
-                    # BitcoinAlphaDataset, BitcoinOTCDataset,
-                    # SMSADataset, SMSBDataset, SMSCDataset,
-                    # EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-                    # FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
+    for dataset in [SyntheticCDMDataset, SyntheticMNLDataset,
+                    WikiTalkDataset, RedditHyperlinkDataset,
+                    BitcoinAlphaDataset, BitcoinOTCDataset,
+                    SMSADataset, SMSBDataset, SMSCDataset,
+                    EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+                    FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
                     ]:
 
         train_context_mixture_em(dataset)

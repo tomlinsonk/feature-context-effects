@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import statsmodels.api as sm
 import scipy.stats as stats
+import matplotlib as mpl
 import matplotlib.ticker as ticker
 from tqdm import tqdm
 from scipy.ndimage.filters import gaussian_filter1d
@@ -296,7 +297,7 @@ def plot_binned_mnl(dataset, model_param_fname):
 
     axes[0, 0].legend()
 
-    graph, train_data, val_data, test_data = dataset.load()
+    graph, train_data, val_data, test_data, _, _ = dataset.load_normalized()
     histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [
         torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(len(train_data))]
 
@@ -335,7 +336,7 @@ def examine_choice_set_size_effects(datasets):
 
     for i, dataset in enumerate(datasets):
 
-        graph, train_data, val_data, test_data = dataset.load()
+        graph, train_data, val_data, test_data, _, _ = dataset.load_normalized()
         histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
 
         unique_lengths, inverse, counts = np.unique(choice_set_lengths, return_counts=True, return_inverse=True)
@@ -382,7 +383,7 @@ def compute_all_accuracies(datasets):
 
     for i, dataset in enumerate(datasets):
         print('Computing accuracies for', dataset.name)
-        graph, train_data, val_data, test_data = dataset.load()
+        graph, train_data, val_data, test_data, _, _ = dataset.load_normalized()
 
         histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
 
@@ -455,17 +456,65 @@ def plot_all_accuracies(datasets):
     plt.savefig(f'{PLOT_DIR}/test_performance_with_baselines_em.pdf', bbox_inches='tight')
 
 
+def visualize_context_effects(datasets):
+    fig, axes = plt.subplots(4, 4, figsize=(10, 10))
+
+    cmap = mpl.cm.bwr
+
+    all_slopes = []
+
+    for i, dataset in enumerate(datasets):
+        row = i // 4
+        col = i % 4
+
+        model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
+
+        # print('base utils:', model.intercepts.data)
+        # print('slops:', )
+
+        slopes = model.intercepts.data.numpy()
+        slopes /= np.max(np.abs(slopes))
+
+        all_slopes.append(slopes)
+
+        axes[row, col].matshow(slopes, cmap=cmap, vmin=-1, vmax=1)
+
+        axes[row, col].axis('off')
+        axes[row, col].set_title(dataset.name, pad=0.1)
+
+    norm = mpl.colors.Normalize(vmin=-1, vmax=1)
+
+    for col in range(1, 4):
+        axes[3, col].axis('off')
+
+    plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axes[3, 1], orientation='horizontal')
+
+    axes[3, 2].matshow(np.mean(all_slopes, axis=0), cmap=cmap, vmin=-1, vmax=1)
+    axes[3, 2].set_title('Mean', pad=0.1)
+
+    axes[3, 3].matshow(np.std(all_slopes, axis=0), cmap=cmap, vmin=-1, vmax=1)
+    axes[3, 3].set_title('Std Dev', pad=0.1)
+
+    plt.savefig('learned_em_intercepts.pdf', bbox_inches='tight')
+    plt.close()
+
+
 if __name__ == '__main__':
-    datasets = [EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-                SMSADataset, SMSBDataset, SMSCDataset, CollegeMsgDataset, MathOverflowDataset, FacebookWallDataset,
-                WikiTalkDataset, RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset]
+    datasets = [EmailEnronDataset, EmailEUDataset, EmailW3CDataset, BitcoinOTCDataset,
+                SMSADataset, SMSBDataset, SMSCDataset, BitcoinAlphaDataset,
+                CollegeMsgDataset, WikiTalkDataset, FacebookWallDataset,
+                MathOverflowDataset, RedditHyperlinkDataset]
+
+
+    visualize_context_effects(datasets)
+
 
     # compute_all_accuracies(datasets)
     # examine_choice_set_size_effects(datasets)
 
     # plot_all_accuracies(datasets)
 
-    for dataset in [SyntheticCDMDataset]:
-        print(dataset.name)
-        plot_binned_mnl(dataset, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
+    # for dataset in [SyntheticCDMDataset]:
+    #     print(dataset.name)
+    #     plot_binned_mnl(dataset, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
 
