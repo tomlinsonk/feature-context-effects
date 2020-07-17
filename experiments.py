@@ -310,21 +310,21 @@ if __name__ == '__main__':
                     FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
                     ]:
 
-        train_context_mixture_em(dataset)
-
-        run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
-
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(FeatureMNL, dataset, learning_rate, weight_decay)
-
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(FeatureCDM, dataset, learning_rate, weight_decay)
-
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(FeatureContextMixture, dataset, learning_rate, weight_decay)
+        # train_context_mixture_em(dataset)
+        #
+        # run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
+        #
+        # torch.random.manual_seed(0)
+        # np.random.seed(0)
+        # run_feature_model_train_data(FeatureMNL, dataset, learning_rate, weight_decay)
+        #
+        # torch.random.manual_seed(0)
+        # np.random.seed(0)
+        # run_feature_model_train_data(FeatureCDM, dataset, learning_rate, weight_decay)
+        #
+        # torch.random.manual_seed(0)
+        # np.random.seed(0)
+        # run_feature_model_train_data(FeatureContextMixture, dataset, learning_rate, weight_decay)
         learn_binned_mnl(dataset)
 
 
