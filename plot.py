@@ -297,7 +297,7 @@ def plot_binned_mnl(dataset, model_param_fname):
 
     axes[0, 0].legend()
 
-    graph, train_data, val_data, test_data, _, _ = dataset.load_normalized()
+    graph, train_data, val_data, test_data, _, _ = dataset.load_standardized()
     histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [
         torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(len(train_data))]
 
@@ -336,7 +336,7 @@ def examine_choice_set_size_effects(datasets):
 
     for i, dataset in enumerate(datasets):
 
-        graph, train_data, val_data, test_data, _, _ = dataset.load_normalized()
+        graph, train_data, val_data, test_data, _, _ = dataset.load_standardized()
         histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
 
         unique_lengths, inverse, counts = np.unique(choice_set_lengths, return_counts=True, return_inverse=True)
@@ -383,7 +383,7 @@ def compute_all_accuracies(datasets):
 
     for i, dataset in enumerate(datasets):
         print('Computing accuracies for', dataset.name)
-        graph, train_data, val_data, test_data, _, _ = dataset.load_normalized()
+        graph, train_data, val_data, test_data, _, _ = dataset.load_standardized()
 
         histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
 
