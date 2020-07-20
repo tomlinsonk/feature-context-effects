@@ -1025,6 +1025,7 @@ class SyntheticCDMDataset(Dataset):
 
 class ExpediaDataset(Dataset):
     name = 'expedia'
+    num_features = 5
 
     @classmethod
     def load_into_pickle(cls, file_name):
@@ -1040,10 +1041,10 @@ class ExpediaDataset(Dataset):
         samples = df['srch_id'].nunique()
         n_feats = 5
 
-        choice_sets = torch.full((samples, max_choice_set_size), -1, dtype=int)
-        choice_sets_with_features = torch.zeros((samples, max_choice_set_size, n_feats), dtype=float)
-        choice_set_lengths = torch.zeros(samples, dtype=int)
-        choices = torch.zeros(samples, dtype=int)
+        choice_sets = torch.full((samples, max_choice_set_size), -1, dtype=torch.long)
+        choice_sets_with_features = torch.zeros((samples, max_choice_set_size, n_feats), dtype=torch.float)
+        choice_set_lengths = torch.zeros(samples, dtype=torch.long)
+        choices = torch.zeros(samples, dtype=torch.long)
 
         for i, (srch_id, group) in tqdm(enumerate(df.groupby('srch_id')), total=samples):
             choice_set_length = len(group.index)
