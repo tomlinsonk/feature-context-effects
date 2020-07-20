@@ -923,6 +923,7 @@ class SyntheticCDMDataset(Dataset):
         choices = []
 
         base_utilities = np.array([2, 1, 3, 1, 3, 5])
+
         context_effects = np.array([[0, 0, 0, 0, 0, 100],
                                     [0, 0, 5, 0, 0, 0],
                                     [0, -5, 0, 0, 0, 0],
@@ -1022,11 +1023,54 @@ class SyntheticCDMDataset(Dataset):
             pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
 
 
+class ExpediaDataset(Dataset):
+    name = 'expedia'
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+
+        feature_names = ['prop_starrating', 'prop_review_score', 'prop_location_score1', 'price_usd', 'promotion_flag']
+
+        df = pd.read_csv(f'{DATA_DIR}/expedia-personalized-sort/train.csv', usecols=['srch_id', 'prop_id', 'booking_bool'] + feature_names)
+
+        # Select only searches that result in a booking
+        df = df[df.groupby(['srch_id'])['booking_bool'].transform(max) == 1]
+
+        max_choice_set_size = df['srch_id'].value_counts().max()
+        samples = df['srch_id'].nunique()
+        n_feats = 5
+
+        choice_sets = torch.full((samples, max_choice_set_size), -1, dtype=int)
+        choice_sets_with_features = torch.zeros((samples, max_choice_set_size, n_feats), dtype=float)
+        choice_set_lengths = torch.zeros(samples, dtype=int)
+        choices = torch.zeros(samples, dtype=int)
+
+        for i, (srch_id, group) in tqdm(enumerate(df.groupby('srch_id')), total=samples):
+            choice_set_length = len(group.index)
+            choice_set_lengths[i] = choice_set_length
+
+            choice_sets[i, :choice_set_length] = torch.as_tensor(group['prop_id'].values)
+            choice_sets_with_features[i, :choice_set_length] = torch.as_tensor(group[feature_names].values)
+            choices[i] = torch.from_numpy(np.where(group['booking_bool'] == 1)[0])
+
+        train_data, val_data, test_data = cls.data_split(samples, torch.zeros_like(choices),
+                                                         torch.zeros_like(choices),
+                                                         choice_sets,
+                                                         choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=False)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((nx.DiGraph(), train_data, val_data, test_data), f, protocol=4)
+
+
 if __name__ == '__main__':
-    for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
-                    BitcoinAlphaDataset, BitcoinOTCDataset,
-                    SMSADataset, SMSBDataset, SMSCDataset,
-                    EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-                    FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
-        dataset.load_standardized()
+    # for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
+    #                 BitcoinAlphaDataset, BitcoinOTCDataset,
+    #                 SMSADataset, SMSBDataset, SMSCDataset,
+    #                 EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+    #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
+    #     dataset.load_standardized()
+
+    ExpediaDataset.print_stats()
+
 

@@ -285,9 +285,6 @@ def plot_binned_mnl(dataset, model_param_fname):
 
             axes[row, col].set_xlim(x_min, x_max)
 
-            if col < 3:
-                axes[row, col].set_xscale('log')
-
             y_mins[row] = min(y_mins[row], min(mnl_utilities[:, row]))
             y_maxs[row] = max(y_maxs[row], max(mnl_utilities[:, row]))
 
@@ -466,12 +463,12 @@ def visualize_context_effects(datasets):
         row = i // 4
         col = i % 4
 
-        model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
+        model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_0.005_0.001.pt')
 
         # print('base utils:', model.intercepts.data)
         # print('slops:', )
 
-        slopes = model.slopes.data.numpy()
+        slopes = model.intercepts.data.numpy()
         slopes /= np.max(np.abs(slopes))
 
         all_slopes.append(slopes)
@@ -494,7 +491,7 @@ def visualize_context_effects(datasets):
     axes[3, 3].matshow(np.std(all_slopes, axis=0), cmap=cmap, vmin=-1, vmax=1)
     axes[3, 3].set_title('Std Dev', pad=0.1)
 
-    plt.savefig('learned_em_slopes.pdf', bbox_inches='tight')
+    plt.savefig('learned_context_mixture_intercepts.pdf', bbox_inches='tight')
     plt.close()
 
 
@@ -505,7 +502,7 @@ if __name__ == '__main__':
                 MathOverflowDataset, RedditHyperlinkDataset]
 
 
-    # visualize_context_effects(datasets)
+    visualize_context_effects(datasets)
 
 
     # compute_all_accuracies(datasets)
@@ -513,7 +510,7 @@ if __name__ == '__main__':
 
     # plot_all_accuracies(datasets)
 
-    for dataset in datasets + [SyntheticCDMDataset, SyntheticMNLDataset]:
-        print(dataset.name)
-        plot_binned_mnl(dataset, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
+    # for dataset in datasets + [SyntheticCDMDataset, SyntheticMNLDataset]:
+    #     print(dataset.name)
+    #     plot_binned_mnl(dataset, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_0.005_0.001.pt')
 

@@ -10,7 +10,8 @@ from tqdm import tqdm
 from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
-    RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset, SyntheticMNLDataset, SyntheticCDMDataset
+    RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
+    ExpediaDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
     FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em
 
@@ -302,7 +303,8 @@ if __name__ == '__main__':
     learning_rate = 0.005
     weight_decay = 0.001
 
-    for dataset in [SyntheticCDMDataset, SyntheticMNLDataset,
+    for dataset in [ExpediaDataset,
+                    SyntheticCDMDataset, SyntheticMNLDataset,
                     WikiTalkDataset, RedditHyperlinkDataset,
                     BitcoinAlphaDataset, BitcoinOTCDataset,
                     SMSADataset, SMSBDataset, SMSCDataset,
@@ -310,21 +312,21 @@ if __name__ == '__main__':
                     FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
                     ]:
 
-        # train_context_mixture_em(dataset)
-        #
-        # run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
-        #
-        # torch.random.manual_seed(0)
-        # np.random.seed(0)
-        # run_feature_model_train_data(FeatureMNL, dataset, learning_rate, weight_decay)
-        #
-        # torch.random.manual_seed(0)
-        # np.random.seed(0)
-        # run_feature_model_train_data(FeatureCDM, dataset, learning_rate, weight_decay)
-        #
-        # torch.random.manual_seed(0)
-        # np.random.seed(0)
-        # run_feature_model_train_data(FeatureContextMixture, dataset, learning_rate, weight_decay)
+        train_context_mixture_em(dataset)
+
+        run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
+
+        torch.random.manual_seed(0)
+        np.random.seed(0)
+        run_feature_model_train_data(FeatureMNL, dataset, learning_rate, weight_decay)
+
+        torch.random.manual_seed(0)
+        np.random.seed(0)
+        run_feature_model_train_data(FeatureCDM, dataset, learning_rate, weight_decay)
+
+        torch.random.manual_seed(0)
+        np.random.seed(0)
+        run_feature_model_train_data(FeatureContextMixture, dataset, learning_rate, weight_decay)
         learn_binned_mnl(dataset)
 
 

@@ -686,7 +686,7 @@ def context_mixture_em(train_data, num_features):
     nll = np.inf
     prev_nll = np.inf
 
-    while nll * 1.0001 < prev_nll or nll == np.inf:
+    while nll * 1.00001 < prev_nll or nll == np.inf:
         # Use learned linear context model to compute utility matrices for each sample
         utility_matrices = B + C * (torch.ones(n, 1) @ mean_choice_set_features[:, None, :])
 
@@ -701,7 +701,7 @@ def context_mixture_em(train_data, num_features):
         alpha = responsibilities.sum(0) / batch_size
 
         Q = EMAlgorithmQ(num_features, responsibilities, mean_choice_set_features)
-        optimizer = torch.optim.Adam(Q.parameters(), lr=0.1, weight_decay=0, amsgrad=True)
+        optimizer = torch.optim.Adam(Q.parameters(), lr=0.005, weight_decay=0, amsgrad=True)
 
         prev_loss = np.inf
         total_loss = np.inf
@@ -716,7 +716,7 @@ def context_mixture_em(train_data, num_features):
                 loss.backward()
                 optimizer.step()
 
-            if total_loss * 1.0001 > prev_loss:
+            if total_loss * 1.00001 > prev_loss:
                 break
 
         B = Q.B.clone().detach()
@@ -735,6 +735,7 @@ def context_mixture_em(train_data, num_features):
     model.intercepts.data = B
     model.slopes.data = C
     model.weights.data = alpha
+
 
     return model
 
