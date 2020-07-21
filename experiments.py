@@ -334,6 +334,10 @@ if __name__ == '__main__':
         run_feature_model_train_data(FeatureContextMixture, dataset, learning_rate, weight_decay)
         learn_binned_mnl(dataset)
 
+        torch.random.manual_seed(0)
+        np.random.seed(0)
+        run_feature_model_train_data(MNLMixture, dataset, learning_rate, weight_decay)
+
 
 
 
