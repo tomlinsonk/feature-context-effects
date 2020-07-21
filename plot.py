@@ -15,7 +15,8 @@ from scipy.ndimage.filters import gaussian_filter1d
 from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
-    RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SyntheticMNLDataset, SyntheticCDMDataset
+    RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
+    ExpediaDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
     FeatureContextMixture, train_model, FeatureSelector, RandomSelector
 
@@ -252,7 +253,10 @@ def plot_binned_mnl(dataset, model_param_fname):
     wls_slopes = torch.zeros(n_feats, n_feats)
     wls_intercepts = torch.zeros(n_feats, n_feats)
 
-    for col, x_name in enumerate(['In-degree', 'Shared Nbrs.', 'Recip. Weight', 'Send Recency', 'Receive Recency', 'Recip. Recency']):
+    feature_names = ['In-degree', 'Shared Nbrs.', 'Recip. Weight', 'Send Recency', 'Receive Recency', 'Recip. Recency']
+    # feature_names = ['Star Rating', 'Review Score', 'Location Score', 'Price', 'On Promotion']
+
+    for col, x_name in enumerate(feature_names):
         bins, mnl_utilities, bin_counts, bin_choice_set_log_lengths, bin_losses = data[col]
 
         nonempty = bin_counts > 0
@@ -260,7 +264,7 @@ def plot_binned_mnl(dataset, model_param_fname):
         x_min = bins[min([i for i in range(len(bins)) if bin_counts[i] > 0])]
         x_max = bins[max([i for i in range(len(bins)) if bin_counts[i] > 0])]
 
-        for row, y_name in enumerate(['Log In-degree', 'Log Shared Nbrs.', 'Log Recip. Weight', 'Send Recency', 'Receive Recency', 'Recip. Recency']):
+        for row, y_name in enumerate(feature_names):
             with_const = sm.add_constant(bins[nonempty])
             mod_wls = sm.WLS(mnl_utilities[nonempty, row], with_const, weights=bin_counts[nonempty])
             res_wls = mod_wls.fit()
@@ -408,6 +412,68 @@ def compute_all_accuracies(datasets):
         pickle.dump([np.array(losses), np.array(accs), np.array(mean_ranks), np.array(all_ranks), np.array(all_correct_preds)], f)
 
 
+def plot_expedia_accuracies():
+    methods = [FeatureMNL, FeatureCDM, FeatureContextMixture, FeatureSelector, FeatureSelector, FeatureSelector,
+               FeatureSelector, FeatureSelector, RandomSelector]
+
+    losses = []
+    accs = []
+    mean_ranks = []
+    all_correct_preds = []
+    all_ranks = []
+
+    graph, train_data, val_data, test_data, _, _ = ExpediaDataset.load_standardized()
+
+    histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
+
+    for j, method in enumerate(methods):
+        param_fname = f'{PARAM_DIR}/{method.name}_{ExpediaDataset.name}_params_0.005_0.001.pt' if method != FeatureContextMixture else f'{PARAM_DIR}/context_mixture_em_{ExpediaDataset.name}_params.pt'
+
+        model_param = ExpediaDataset.num_features if j < 3 else j - 3
+        model = load_feature_model(method, model_param, param_fname)
+
+        if j == 6:
+            choice_sets_with_features *= -1
+
+        pred = model(choice_sets_with_features, choice_set_lengths)
+        train_loss = model.loss(pred, choices)
+
+        ranks = stats.rankdata(-pred.detach().numpy(), method='average', axis=1)[np.arange(len(choices)), choices]
+        vals, idxs = pred.max(1)
+
+        correct_preds = (idxs == choices)
+        acc = correct_preds.long().sum().item() / len(choices)
+
+        losses.append(train_loss.item())
+        accs.append(acc)
+        mean_ranks.append(np.mean(ranks / np.array(choice_set_lengths)))
+        all_correct_preds.append(correct_preds.numpy())
+        all_ranks.append(ranks)
+
+    method_names = ['Feature MNL', 'Feature CDM', 'Context Mixture', 'Star Rating', 'Review Score',
+                          'Location Score', 'Price', 'On Promotion', 'Random']
+
+    fig, axes = plt.subplots(3, 1, figsize=(14, 11))
+
+    axes[0].bar(range(len(method_names)), losses)
+    axes[0].set_xticks(range(len(method_names)))
+    axes[0].set_xticklabels(method_names)
+    axes[0].set_ylabel('NLL')
+
+
+    axes[1].bar(range(len(method_names)), accs)
+    axes[1].set_xticks(range(len(method_names)))
+    axes[1].set_xticklabels(method_names)
+    axes[1].set_ylabel('Accuracy')
+
+    axes[2].bar(range(len(method_names)), mean_ranks)
+    axes[2].set_xticks(range(len(method_names)))
+    axes[2].set_xticklabels(method_names)
+    axes[2].set_ylabel('Mean Correct Position')
+
+    plt.show()
+
+
 def plot_all_accuracies(datasets):
     with open(f'{RESULT_DIR}/all_prediction_results.pickle', 'rb') as f:
         losses, accs, mean_ranks, _, _ = pickle.load(f)
@@ -501,16 +567,16 @@ if __name__ == '__main__':
                 CollegeMsgDataset, WikiTalkDataset, FacebookWallDataset,
                 MathOverflowDataset, RedditHyperlinkDataset]
 
+    plot_expedia_accuracies()
 
-    visualize_context_effects(datasets)
-
-
+    # visualize_context_effects(datasets)
     # compute_all_accuracies(datasets)
     # examine_choice_set_size_effects(datasets)
-
-    # plot_all_accuracies(datasets)
-
+    #
+    # # plot_all_accuracies(datasets)
+    #
     # for dataset in datasets + [SyntheticCDMDataset, SyntheticMNLDataset]:
     #     print(dataset.name)
     #     plot_binned_mnl(dataset, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_0.005_0.001.pt')
+
 

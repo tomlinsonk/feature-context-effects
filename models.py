@@ -211,13 +211,13 @@ class FeatureMNL(nn.Module):
         super().__init__()
 
         self.num_features = num_features
-        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
+        self.utilities = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
         self.device = device
 
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
 
-        utilities = (self.weights * choice_set_features).sum(-1)
+        utilities = (self.utilities * choice_set_features).sum(-1)
 
         utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
         return nn.functional.log_softmax(utilities, 1)
@@ -294,6 +294,48 @@ class FeatureContextMixture(nn.Module):
 
         # Compute utility of each item under each feature MNL
         utilities = choice_set_features @ utility_matrices
+        utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
+
+        # Compute MNL log-probs for each feature
+        log_probs = nn.functional.log_softmax(utilities, 1)
+
+        # Combine the MNLs into single probability using weights
+        # This is what I want to do, but logsumexp produces nan gradients when there are -infs
+        # https://github.com/pytorch/pytorch/issues/31829
+        # return torch.logsumexp(log_probs + torch.log(self.weights / self.weights.sum()), 2)
+
+        # So, I'm instead using the fix in the issue linked above
+        return logsumexp(log_probs + torch.log_softmax(self.weights, 0), 2)
+
+    def loss(self, y_pred, y):
+        """
+        The error in inferred log-probabilities given observations
+        :param y_pred: log(choice probabilities)
+        :param y: observed choices
+        :return: the loss
+        """
+
+        return nn.functional.nll_loss(y_pred, y)
+
+
+class MNLMixture(nn.Module):
+
+    name = 'mnl_mixture'
+
+    def __init__(self, num_features, device=torch.device('cpu')):
+        super().__init__()
+
+        self.num_features = num_features
+        self.utilities = nn.Parameter(torch.rand(self.num_features, self.num_features), requires_grad=True)
+        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
+
+        self.device = device
+
+    def forward(self, choice_set_features, choice_set_lengths):
+        batch_size, max_choice_set_len, num_feats = choice_set_features.size()
+
+        # Compute utility of each item under each MNL
+        utilities = choice_set_features @ self.utilities.T
         utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
 
         # Compute MNL log-probs for each feature
@@ -510,7 +552,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
     val_accs = []
     prev_total_loss = np.inf
 
-    for epoch in range(100):
+    for epoch in range(200):
         train_loss = 0
         train_count = 0
         train_correct = 0
@@ -542,8 +584,8 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
         train_accs.append(train_correct / train_count)
         train_losses.append(train_loss / train_count)
 
-        # print(f'{epoch}: {total_loss}')
-        if prev_total_loss - total_loss < prev_total_loss * 0.00001 or total_loss < 0.001:
+        print(f'{epoch}: {total_loss}')
+        if prev_total_loss - total_loss < prev_total_loss * 0.0000001 or total_loss < 0.001:
             break
         prev_total_loss = total_loss
         # print(model.contexts.detach().numpy())
@@ -598,6 +640,11 @@ def train_feature_cdm(train_data, val_data, num_features, lr=1e-4, weight_decay=
 
 def train_feature_context_mixture(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
     model = FeatureContextMixture(num_features)
+    return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
+
+
+def train_mnl_mixture(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
+    model = MNLMixture(num_features)
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 
@@ -686,7 +733,7 @@ def context_mixture_em(train_data, num_features):
     nll = np.inf
     prev_nll = np.inf
 
-    while nll * 1.00001 < prev_nll or nll == np.inf:
+    while nll * 1.0000001 < prev_nll or nll == np.inf:
         # Use learned linear context model to compute utility matrices for each sample
         utility_matrices = B + C * (torch.ones(n, 1) @ mean_choice_set_features[:, None, :])
 
@@ -706,7 +753,7 @@ def context_mixture_em(train_data, num_features):
         prev_loss = np.inf
         total_loss = np.inf
 
-        for epoch in tqdm(range(50)):
+        for epoch in tqdm(range(100)):
             prev_loss = total_loss
             total_loss = 0
             for batch in train_data_loader:

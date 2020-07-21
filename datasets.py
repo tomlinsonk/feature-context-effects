@@ -1051,7 +1051,13 @@ class ExpediaDataset(Dataset):
             choice_set_lengths[i] = choice_set_length
 
             choice_sets[i, :choice_set_length] = torch.as_tensor(group['prop_id'].values)
-            choice_sets_with_features[i, :choice_set_length] = torch.as_tensor(group[feature_names].values)
+            features = torch.as_tensor(group[feature_names].values)
+            features[torch.isnan(features)] = 0
+
+            choice_sets_with_features[i, :choice_set_length] = features
+            torch.isnan(choice_sets_with_features[i, :choice_set_length])
+
+
             choices[i] = torch.from_numpy(np.where(group['booking_bool'] == 1)[0])
 
         train_data, val_data, test_data = cls.data_split(samples, torch.zeros_like(choices),
@@ -1072,6 +1078,8 @@ if __name__ == '__main__':
     #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
     #     dataset.load_standardized()
 
-    ExpediaDataset.print_stats()
+    g, train_data, val_data, test_data, = ExpediaDataset.load()
+
+
 
 

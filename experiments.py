@@ -13,10 +13,11 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
     ExpediaDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
-    FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em
+    FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em, \
+    MNLMixture, train_mnl_mixture
 
 training_methods = {HistoryCDM: train_history_cdm, HistoryMNL: train_history_mnl, LSTM: train_lstm, FeatureMNL: train_feature_mnl,
-                    FeatureCDM: train_feature_cdm, FeatureContextMixture: train_feature_context_mixture}
+                    FeatureCDM: train_feature_cdm, FeatureContextMixture: train_feature_context_mixture, MNLMixture: train_mnl_mixture}
 
 
 def run_model(method, dataset, dim, lr, wd, beta=None, learn_beta=None):
@@ -273,8 +274,13 @@ def learn_binned_mnl(dataset):
 def run_likelihood_ratio_test(dataset, lr, wd):
     torch.random.manual_seed(0)
     np.random.seed(0)
+    model = run_feature_model_full_dataset(MNLMixture, dataset, lr, wd)
+    print(model.utilities, model.weights)
+
+    torch.random.manual_seed(0)
+    np.random.seed(0)
     model = run_feature_model_full_dataset(FeatureMNL, dataset, lr, wd)
-    print(model.weights)
+    print(model.utilities)
 
     torch.random.manual_seed(0)
     np.random.seed(0)
@@ -300,7 +306,7 @@ def train_context_mixture_em(dataset):
 
 
 if __name__ == '__main__':
-    learning_rate = 0.005
+    learning_rate = 0.0005
     weight_decay = 0.001
 
     for dataset in [ExpediaDataset,
@@ -312,9 +318,8 @@ if __name__ == '__main__':
                     FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
                     ]:
 
-        train_context_mixture_em(dataset)
-
         run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
+        train_context_mixture_em(dataset)
 
         torch.random.manual_seed(0)
         np.random.seed(0)
