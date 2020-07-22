@@ -141,57 +141,21 @@ def plot_compare_all():
     plt.show()
 
 
-def plot_grid_search(method, dataset):
-    lrs = [0.005]
-    wds = [0, 1e-5, 1e-4]
+def plot_grid_search(dataset):
+    with open(f'{RESULT_DIR}/{dataset.name}_lr_grid_search_results.pickle', 'rb') as f:
+        data = pickle.load(f)
 
-    fig, axes = plt.subplots(3, 3, sharex='col')
+    for method in data[0.01]:
+        plt.plot(range(5), [data[lr][method][-1] for lr in data], label=method.name)
 
-    loaded_data = dataset.load()
-    n = len(loaded_data[0].nodes)
 
-    for row, wd in enumerate(wds):
-        for col, lr in enumerate(lrs):
-            beta_string = '_None_None' if method is LSTM else '_0.5_True'
-            param_fname = f'params/{method.name}_{dataset.name}_params_8_{lr}_{wd}{beta_string}.pt'
-            loss_fname = f'results/{method.name}_{dataset.name}_losses_8_{lr}_{wd}{beta_string}.pickle'
 
-            if row == 0:
-                axes[row, col].annotate(f'lr={lr}', xy=(0.5, 1), xytext=(0, 5),
-                                        xycoords='axes fraction', textcoords='offset points',
-                                        fontsize=14, ha='center', va='baseline')
+    plt.xticks(range(5), data.keys())
 
-            if col == 2:
-                axes[row, col].annotate(f'wd={wd}', xy=(1, 0.5), xytext=(-axes[row, col].yaxis.labelpad + 20, 0),
-                                        xycoords='axes fraction', textcoords='offset points',
-                                        fontsize=14, ha='right', va='center', rotation=270)
+    plt.title(dataset.name)
+    plt.legend()
+    plt.show()
 
-            if not os.path.isfile(param_fname):
-                continue
-
-            model = load_model(method, n, 8, param_fname)
-
-            acc, mean_rank, mrr = test_model(model, dataset, loaded_data=loaded_data)
-            print(f'Accuracy: {acc}')
-
-            with open(loss_fname, 'rb') as f:
-                train_losses, train_accs, val_losses, val_accs = pickle.load(f)
-
-            axes[row, col].plot(range(500), train_accs, label='train')
-            axes[row, col].plot(range(500), val_accs, label='val')
-
-            beta_string = f'$\\beta={model.beta.item():.2f}$' if method in (HistoryMNL, HistoryCDM) else ''
-
-            axes[row, col].annotate(f'Val. acc: {acc:.2f}\n{beta_string}',
-                                    xy=(0.9, 0.72), xycoords='axes fraction', fontsize=10,
-                                    ha='right')
-
-            axes[row, col].set_ylim(0, 1)
-
-    axes[0, 0].legend(loc='best')
-    plt.savefig(f'{method.name}_{dataset.name}_grid_search.pdf', bbox_inches='tight')
-
-    plt.close()
 
 
 def plot_dataset_stats():
@@ -561,13 +525,24 @@ def visualize_context_effects(datasets):
     plt.close()
 
 
-if __name__ == '__main__':
-    datasets = [EmailEnronDataset, EmailEUDataset, EmailW3CDataset, BitcoinOTCDataset,
-                SMSADataset, SMSBDataset, SMSCDataset, BitcoinAlphaDataset,
-                CollegeMsgDataset, WikiTalkDataset, FacebookWallDataset,
-                MathOverflowDataset, RedditHyperlinkDataset]
 
-    plot_expedia_accuracies()
+
+
+if __name__ == '__main__':
+    datasets = [ExpediaDataset,
+                SyntheticCDMDataset, SyntheticMNLDataset,
+                WikiTalkDataset, RedditHyperlinkDataset,
+                BitcoinAlphaDataset, BitcoinOTCDataset,
+                SMSADataset, SMSBDataset, SMSCDataset,
+                EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+                FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
+                ]
+
+
+    for dataset in datasets:
+        plot_grid_search(dataset)
+
+    # plot_expedia_accuracies()
 
     # visualize_context_effects(datasets)
     # compute_all_accuracies(datasets)

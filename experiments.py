@@ -12,7 +12,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
     RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
-    ExpediaDataset
+    ExpediaDataset, SushiDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
     FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em, \
     MNLMixture, train_mnl_mixture
@@ -306,28 +306,45 @@ def train_context_mixture_em(dataset):
     torch.save(model.state_dict(), f'context_mixture_em_{dataset.name}_params.pt')
 
 
-def learning_rate_grid_search(dataset):
-    wd = 0.001
-
+def learning_rate_grid_search_helper(args):
+    dataset, method, lr = args
     graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
 
-    results = {lr: dict() for lr in [0.0001, 0.0005, 0.001, 0.005, 0.01]}
+    print(f'Training {method.name} on {dataset.name} (lr={lr})')
 
-    for lr in results.keys():
-        for method in (MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM):
-            print(f'Training {method.name} on {dataset.name} (lr={lr}, wd={wd})')
 
-            torch.random.manual_seed(0)
-            np.random.seed(0)
-            model, train_losses, train_accs, val_losses, val_accs = training_methods[method](all_data, val_data,
-                                                                                             dataset.num_features,
-                                                                                             lr=lr, weight_decay=wd,
-                                                                                             compute_val_stats=False)
-            print('Final loss:', train_losses[-1])
-            results[lr][method] = train_losses
+    torch.random.manual_seed(0)
+    np.random.seed(0)
+    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](all_data, val_data,
+                                                                                     dataset.num_features,
+                                                                                     lr=lr, weight_decay=0.001,
+                                                                                     compute_val_stats=False)
 
-    with open(f'{dataset.name}_lr_grid_search_results.pickle', 'wb') as f:
+
+    return args, train_losses[-1]
+
+
+
+def learning_rate_grid_search(datasets):
+
+    lrs = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
+    methods = [FeatureMNL, MNLMixture, FeatureCDM, FeatureContextMixture]
+
+    params = {(dataset, method, lr) for dataset in datasets for lr in lrs for method in methods}
+
+
+    results = dict()
+
+    pool = Pool(10)
+
+    for args, loss in tqdm(pool.imap_unordered(learning_rate_grid_search_helper, params), total=len(params)):
+        results[args] = loss
+
+    pool.join()
+    pool.close()
+
+    with open(f'all_grid_search_results.pickle', 'wb') as f:
         pickle.dump(results, f)
 
 
@@ -341,14 +358,11 @@ if __name__ == '__main__':
                 BitcoinAlphaDataset, BitcoinOTCDataset,
                 SMSADataset, SMSBDataset, SMSCDataset,
                 EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-                FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
+                FacebookWallDataset, CollegeMsgDataset,
+                #MathOverflowDataset
                 ]
 
-
-    pool = Pool(10)
-    pool.map(learning_rate_grid_search, datasets)
-    pool.join()
-    pool.close()
+    learning_rate_grid_search(datasets)
 
     # for dataset in datasets:
 
