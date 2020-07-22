@@ -346,7 +346,7 @@ if __name__ == '__main__':
 
 
     pool = Pool(10)
-    pool.imap_unordered(learning_rate_grid_search, datasets)
+    pool.map(learning_rate_grid_search, datasets)
     pool.join()
     pool.close()
 
