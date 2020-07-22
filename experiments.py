@@ -305,6 +305,30 @@ def train_context_mixture_em(dataset):
     torch.save(model.state_dict(), f'context_mixture_em_{dataset.name}_params.pt')
 
 
+def learning_rate_grid_search(dataset, wd):
+
+    graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
+    all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
+
+    results = {lr: dict() for lr in [0.0001, 0.0005, 0.001, 0.005, 0.01]}
+
+    for lr in results.keys():
+        for method in (MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM):
+            print(f'Training {method.name} on {dataset.name} (lr={lr}, wd={wd})')
+
+            torch.random.manual_seed(0)
+            np.random.seed(0)
+            model, train_losses, train_accs, val_losses, val_accs = training_methods[method](all_data, val_data,
+                                                                                             dataset.num_features,
+                                                                                             lr=lr, weight_decay=wd,
+                                                                                             compute_val_stats=False)
+
+            results[lr][method] = train_losses
+
+    with open(f'{dataset.name}_lr_grid_search_results.pickle', 'wb') as f:
+        pickle.dump(results, f)
+
+
 if __name__ == '__main__':
     learning_rate = 0.0005
     weight_decay = 0.001
@@ -318,25 +342,27 @@ if __name__ == '__main__':
                     FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
                     ]:
 
-        run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
-        train_context_mixture_em(dataset)
+        learning_rate_grid_search(dataset, weight_decay)
 
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(FeatureMNL, dataset, learning_rate, weight_decay)
-
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(FeatureCDM, dataset, learning_rate, weight_decay)
-
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(FeatureContextMixture, dataset, learning_rate, weight_decay)
-        learn_binned_mnl(dataset)
-
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(MNLMixture, dataset, learning_rate, weight_decay)
+        # run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
+        # train_context_mixture_em(dataset)
+        #
+        # torch.random.manual_seed(0)
+        # np.random.seed(0)
+        # run_feature_model_train_data(FeatureMNL, dataset, learning_rate, weight_decay)
+        #
+        # torch.random.manual_seed(0)
+        # np.random.seed(0)
+        # run_feature_model_train_data(FeatureCDM, dataset, learning_rate, weight_decay)
+        #
+        # torch.random.manual_seed(0)
+        # np.random.seed(0)
+        # run_feature_model_train_data(FeatureContextMixture, dataset, learning_rate, weight_decay)
+        # learn_binned_mnl(dataset)
+        #
+        # torch.random.manual_seed(0)
+        # np.random.seed(0)
+        # run_feature_model_train_data(MNLMixture, dataset, learning_rate, weight_decay)
 
 
 
