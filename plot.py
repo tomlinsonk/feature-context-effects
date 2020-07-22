@@ -18,8 +18,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
     ExpediaDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
-    FeatureContextMixture, train_model, FeatureSelector, RandomSelector
-
+    FeatureContextMixture, train_model, FeatureSelector, RandomSelector, MNLMixture
 
 PARAM_DIR = 'params/triadic-closure-6-standard-feats'
 RESULT_DIR = 'results/triadic-closure-6-standard-feats'
@@ -142,17 +141,21 @@ def plot_compare_all():
 
 
 def plot_grid_search(dataset):
-    with open(f'{RESULT_DIR}/{dataset.name}_lr_grid_search_results.pickle', 'rb') as f:
+    with open(f'{RESULT_DIR}/all_grid_search_results.pickle', 'rb') as f:
         data = pickle.load(f)
 
-    for method in data[0.01]:
-        plt.plot(range(5), [data[lr][method][-1] for lr in data], label=method.name)
+    methods = [FeatureMNL, MNLMixture, FeatureCDM, FeatureContextMixture]
+    lrs = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
+    markers = ['s', '^', 'o', 'P']
 
+    for i, method in enumerate(methods):
+        plt.plot(range(6), [data[dataset, method, lr] for lr in lrs], '.-', label=method.name, marker=markers[i])
 
-
-    plt.xticks(range(5), data.keys())
-
+    plt.xticks(range(6), lrs)
+    plt.xlabel('Learning Rate')
+    plt.ylabel('Total NLL')
     plt.title(dataset.name)
+    plt.yscale('log')
     plt.legend()
     plt.show()
 

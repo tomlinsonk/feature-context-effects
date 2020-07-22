@@ -1,3 +1,4 @@
+import os
 import pickle
 import random
 from multiprocessing.pool import Pool
@@ -338,7 +339,13 @@ def learning_rate_grid_search(datasets):
     pool.close()
     pool.join()
 
-    with open(f'all_grid_search_results.pickle', 'wb') as f:
+
+    filename = f'all_grid_search_results.pickle'
+    if os.path.isfile(filename):
+        with open(filename, 'rb') as f:
+            results.update(pickle.load(f))
+
+    with open(filename, 'wb') as f:
         pickle.dump(results, f)
 
 
@@ -346,15 +353,16 @@ if __name__ == '__main__':
     learning_rate = 0.0005
     weight_decay = 0.001
 
-    datasets = [ExpediaDataset,
-                SyntheticCDMDataset, SyntheticMNLDataset,
-                WikiTalkDataset, RedditHyperlinkDataset,
-                BitcoinAlphaDataset, BitcoinOTCDataset,
-                SMSADataset, SMSBDataset, SMSCDataset,
-                EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-                FacebookWallDataset, CollegeMsgDataset,
-                #MathOverflowDataset
-                ]
+    datasets = [
+        # ExpediaDataset,
+        # SyntheticCDMDataset, SyntheticMNLDataset,
+        # WikiTalkDataset, RedditHyperlinkDataset,
+        # BitcoinAlphaDataset, BitcoinOTCDataset,
+        # SMSADataset, SMSBDataset, SMSCDataset,
+        # EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+        # FacebookWallDataset, CollegeMsgDataset,
+        MathOverflowDataset
+    ]
 
     learning_rate_grid_search(datasets)
 
