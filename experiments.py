@@ -1,5 +1,6 @@
 import pickle
 import random
+from multiprocessing.pool import Pool
 
 import choix
 import numpy as np
@@ -305,7 +306,8 @@ def train_context_mixture_em(dataset):
     torch.save(model.state_dict(), f'context_mixture_em_{dataset.name}_params.pt')
 
 
-def learning_rate_grid_search(dataset, wd):
+def learning_rate_grid_search(dataset):
+    wd = 0.001
 
     graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
@@ -333,16 +335,22 @@ if __name__ == '__main__':
     learning_rate = 0.0005
     weight_decay = 0.001
 
-    for dataset in [ExpediaDataset,
-                    SyntheticCDMDataset, SyntheticMNLDataset,
-                    WikiTalkDataset, RedditHyperlinkDataset,
-                    BitcoinAlphaDataset, BitcoinOTCDataset,
-                    SMSADataset, SMSBDataset, SMSCDataset,
-                    EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-                    FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
-                    ]:
+    datasets = [ExpediaDataset,
+                SyntheticCDMDataset, SyntheticMNLDataset,
+                WikiTalkDataset, RedditHyperlinkDataset,
+                BitcoinAlphaDataset, BitcoinOTCDataset,
+                SMSADataset, SMSBDataset, SMSCDataset,
+                EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+                FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
+                ]
 
-        learning_rate_grid_search(dataset, weight_decay)
+
+    pool = Pool(10)
+    pool.imap_unordered(learning_rate_grid_search, datasets)
+    pool.join()
+    pool.close()
+
+    for dataset in datasets:
 
         # run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
         # train_context_mixture_em(dataset)
