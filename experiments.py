@@ -330,7 +330,7 @@ def learning_rate_grid_search(datasets):
 
     results = dict()
 
-    pool = Pool(10)
+    pool = Pool(16)
 
     for args, loss in tqdm(pool.imap_unordered(learning_rate_grid_search_helper, params), total=len(params)):
         results[args] = loss
