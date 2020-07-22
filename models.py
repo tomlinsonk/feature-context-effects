@@ -783,7 +783,6 @@ def context_mixture_em(train_data, num_features):
     model.slopes.data = C
     model.weights.data = alpha
 
-
     return model
 
 
