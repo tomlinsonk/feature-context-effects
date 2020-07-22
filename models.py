@@ -552,7 +552,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
     val_accs = []
     prev_total_loss = np.inf
 
-    for epoch in tqdm(range(100)):
+    for epoch in range(100):
         train_loss = 0
         train_count = 0
         train_correct = 0
