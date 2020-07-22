@@ -322,7 +322,7 @@ def learning_rate_grid_search(dataset, wd):
                                                                                              dataset.num_features,
                                                                                              lr=lr, weight_decay=wd,
                                                                                              compute_val_stats=False)
-
+            print('Final loss:', train_losses[-1])
             results[lr][method] = train_losses
 
     with open(f'{dataset.name}_lr_grid_search_results.pickle', 'wb') as f:
