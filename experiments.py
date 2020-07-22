@@ -328,7 +328,6 @@ def learning_rate_grid_search(datasets):
 
     params = {(dataset, method, lr) for dataset in datasets for lr in lrs for method in methods}
 
-
     results = dict()
 
     pool = Pool(10)
@@ -336,8 +335,8 @@ def learning_rate_grid_search(datasets):
     for args, loss in tqdm(pool.imap_unordered(learning_rate_grid_search_helper, params), total=len(params)):
         results[args] = loss
 
-    pool.join()
     pool.close()
+    pool.join()
 
     with open(f'all_grid_search_results.pickle', 'wb') as f:
         pickle.dump(results, f)
