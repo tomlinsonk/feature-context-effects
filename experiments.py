@@ -311,17 +311,12 @@ def learning_rate_grid_search_helper(args):
     graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
 
-    print(f'Training {method.name} on {dataset.name} (lr={lr})')
-
-
     torch.random.manual_seed(0)
     np.random.seed(0)
     model, train_losses, train_accs, val_losses, val_accs = training_methods[method](all_data, val_data,
                                                                                      dataset.num_features,
                                                                                      lr=lr, weight_decay=0.001,
                                                                                      compute_val_stats=False)
-
-
     return args, train_losses[-1]
 
 
