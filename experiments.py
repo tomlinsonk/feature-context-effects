@@ -350,7 +350,7 @@ if __name__ == '__main__':
     pool.join()
     pool.close()
 
-    for dataset in datasets:
+    # for dataset in datasets:
 
         # run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
         # train_context_mixture_em(dataset)
