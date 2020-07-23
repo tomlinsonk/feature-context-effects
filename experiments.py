@@ -360,8 +360,8 @@ def l1_regularization_grid_search(datasets):
 
     pool = Pool(16)
 
-    for args, loss in tqdm(pool.imap_unordered(l1_regularization_grid_search_helper, params), total=len(params)):
-        results[args] = loss
+    for args, model, loss in tqdm(pool.imap_unordered(l1_regularization_grid_search_helper, params), total=len(params)):
+        results[args] = model, loss
 
     pool.close()
     pool.join()
