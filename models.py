@@ -273,7 +273,7 @@ class FeatureContextMixture(nn.Module):
 
     name = 'feature_context_mixture'
 
-    def __init__(self, num_features, device=torch.device('cpu')):
+    def __init__(self, num_features, device=torch.device('cpu'), l1_reg=0):
         super().__init__()
 
         self.num_features = num_features
@@ -282,6 +282,7 @@ class FeatureContextMixture(nn.Module):
         self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
 
         self.device = device
+        self.l1_reg = l1_reg
 
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
@@ -315,7 +316,7 @@ class FeatureContextMixture(nn.Module):
         :return: the loss
         """
 
-        return nn.functional.nll_loss(y_pred, y)
+        return nn.functional.nll_loss(y_pred, y) + self.l1_reg * self.slopes.norm(1)
 
 
 class MNLMixture(nn.Module):
@@ -637,8 +638,8 @@ def train_feature_cdm(train_data, val_data, num_features, lr=1e-4, weight_decay=
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 
-def train_feature_context_mixture(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
-    model = FeatureContextMixture(num_features)
+def train_feature_context_mixture(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False, l1_reg=0):
+    model = FeatureContextMixture(num_features, l1_reg=l1_reg)
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 

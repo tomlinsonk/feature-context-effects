@@ -326,10 +326,51 @@ def learning_rate_grid_search(datasets):
     filename = f'all_grid_search_results.pickle'
     if os.path.isfile(filename):
         with open(filename, 'rb') as f:
-            results.update(pickle.load(f))
+            old_results, _ = pickle.load(f)
+            results.update(old_results)
 
     with open(filename, 'wb') as f:
-        pickle.dump(results, f)
+        pickle.dump((results, lrs), f)
+
+
+def l1_regularization_grid_search_helper(args):
+    dataset, reg_param = args
+    graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
+    all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
+
+    torch.random.manual_seed(0)
+    np.random.seed(0)
+    model, train_losses, train_accs, val_losses, val_accs = train_feature_context_mixture(all_data, val_data,
+        dataset.num_features,
+        lr=dataset.best_lr(FeatureContextMixture),
+        weight_decay=0.001,
+        compute_val_stats=False,
+        l1_reg=reg_param)
+
+    return args, model, train_losses[-1]
+
+
+def l1_regularization_grid_search(datasets):
+
+    reg_params = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5]
+
+    params = {(dataset, reg_param) for dataset in datasets for reg_param in reg_params}
+
+    results = dict()
+
+    pool = Pool(16)
+
+    for args, loss in tqdm(pool.imap_unordered(l1_regularization_grid_search_helper, params), total=len(params)):
+        results[args] = loss
+
+    pool.close()
+    pool.join()
+
+
+    filename = f'l1_regularization_grid_search_results.pickle'
+
+    with open(filename, 'wb') as f:
+        pickle.dump((results, reg_params), f)
 
 
 if __name__ == '__main__':
@@ -337,7 +378,7 @@ if __name__ == '__main__':
     weight_decay = 0.001
 
     datasets = [
-        ExpediaDataset,
+        SushiDataset, ExpediaDataset,
         SyntheticCDMDataset, SyntheticMNLDataset,
         WikiTalkDataset, RedditHyperlinkDataset,
         BitcoinAlphaDataset, BitcoinOTCDataset,
@@ -347,18 +388,21 @@ if __name__ == '__main__':
         MathOverflowDataset
     ]
 
+
+    l1_regularization_grid_search(datasets)
+
     # learning_rate_grid_search(datasets)
 
-    for dataset in datasets:
-
-        run_likelihood_ratio_test(dataset, weight_decay)
-
-        train_context_mixture_em(dataset)
-
-        for method in [FeatureMNL, MNLMixture, FeatureCDM, FeatureContextMixture]:
-            torch.random.manual_seed(0)
-            np.random.seed(0)
-            run_feature_model_train_data(method, dataset, dataset.best_lr(method), weight_decay)
+    # for dataset in datasets:
+    #
+    #     run_likelihood_ratio_test(dataset, weight_decay)
+    #
+    #     train_context_mixture_em(dataset)
+    #
+    #     for method in [FeatureMNL, MNLMixture, FeatureCDM, FeatureContextMixture]:
+    #         torch.random.manual_seed(0)
+    #         np.random.seed(0)
+    #         run_feature_model_train_data(method, dataset, dataset.best_lr(method), weight_decay)
 
 
 

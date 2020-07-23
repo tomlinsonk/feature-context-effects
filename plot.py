@@ -16,7 +16,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
     RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
-    ExpediaDataset
+    ExpediaDataset, SushiDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
     FeatureContextMixture, train_model, FeatureSelector, RandomSelector, MNLMixture
 
@@ -340,7 +340,7 @@ def examine_choice_set_size_effects(datasets):
 
 
 def compute_all_accuracies(datasets):
-    methods = [FeatureMNL, FeatureCDM, FeatureContextMixture, FeatureSelector, FeatureSelector, FeatureSelector,
+    methods = [FeatureMNL, FeatureCDM, MNLMixture, FeatureContextMixture, FeatureContextMixture, FeatureSelector, FeatureSelector, FeatureSelector,
                  FeatureSelector, FeatureSelector, FeatureSelector, RandomSelector]
 
     losses = [list() for _ in range(len(methods))]
@@ -357,9 +357,9 @@ def compute_all_accuracies(datasets):
         histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
 
         for j, method in enumerate(methods):
-            param_fname = f'{PARAM_DIR}/{method.name}_{dataset.name}_params_0.005_0.001.pt' if method != FeatureContextMixture else f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt'
+            param_fname = f'{PARAM_DIR}/{method.name}_{dataset.name}_params_{dataset.best_lr(method)}_0.001.pt' if j < 4 else f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt'
 
-            model_param = dataset.num_features if j < 3 else j - 3
+            model_param = dataset.num_features if j < 5 else j - 5
             model = load_feature_model(method, model_param, param_fname)
 
             pred = model(choice_sets_with_features, choice_set_lengths)
@@ -381,9 +381,9 @@ def compute_all_accuracies(datasets):
         pickle.dump([np.array(losses), np.array(accs), np.array(mean_ranks), np.array(all_ranks), np.array(all_correct_preds)], f)
 
 
-def plot_expedia_accuracies():
-    methods = [FeatureMNL, FeatureCDM, FeatureContextMixture, FeatureSelector, FeatureSelector, FeatureSelector,
-               FeatureSelector, FeatureSelector, RandomSelector]
+def plot_general_choice_dataset_accuracies(dataset):
+
+    methods = [FeatureMNL, FeatureCDM, MNLMixture, FeatureContextMixture, FeatureContextMixture] + ([FeatureSelector] * dataset.num_features) + [RandomSelector]
 
     losses = []
     accs = []
@@ -391,20 +391,19 @@ def plot_expedia_accuracies():
     all_correct_preds = []
     all_ranks = []
 
-    graph, train_data, val_data, test_data, _, _ = ExpediaDataset.load_standardized()
+    graph, train_data, val_data, test_data, _, _ = dataset.load_standardized()
 
     histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
 
     for j, method in enumerate(methods):
-        param_fname = f'{PARAM_DIR}/{method.name}_{ExpediaDataset.name}_params_0.005_0.001.pt' if method != FeatureContextMixture else f'{PARAM_DIR}/context_mixture_em_{ExpediaDataset.name}_params.pt'
+        param_fname = f'{PARAM_DIR}/{method.name}_{dataset.name}_params_{dataset.best_lr(method)}_0.001.pt' if j < 4 else f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt'
 
-        model_param = ExpediaDataset.num_features if j < 3 else j - 3
+        model_param = dataset.num_features if j < 5 else j - 5
         model = load_feature_model(method, model_param, param_fname)
 
-        if j == 6:
-            choice_sets_with_features *= -1
+        flip_feats = (dataset == ExpediaDataset and j == 8) or (dataset == SushiDataset and j in (5, 7))
 
-        pred = model(choice_sets_with_features, choice_set_lengths)
+        pred = model(choice_sets_with_features * (-1 if flip_feats else 1), choice_set_lengths)
         train_loss = model.loss(pred, choices)
 
         ranks = stats.rankdata(-pred.detach().numpy(), method='average', axis=1)[np.arange(len(choices)), choices]
@@ -419,8 +418,7 @@ def plot_expedia_accuracies():
         all_correct_preds.append(correct_preds.numpy())
         all_ranks.append(ranks)
 
-    method_names = ['Feature MNL', 'Feature CDM', 'Context Mixture', 'Star Rating', 'Review Score',
-                          'Location Score', 'Price', 'On Promotion', 'Random']
+    method_names = ['Feature MNL', 'Feature CDM', 'Mixed MNL', 'Context Mixture', 'Context Mixture EM'] + dataset.feature_names + ['Random']
 
     fig, axes = plt.subplots(3, 1, figsize=(14, 11))
 
@@ -449,17 +447,25 @@ def plot_all_accuracies(datasets):
 
     fig, axes = plt.subplots(3, 1, figsize=(14, 11))
 
-    bar_width = 0.08
-    xs = [np.arange(len(datasets)) + ((i + 0.5) * bar_width) for i in range(-5, 5)]
-    method_names = ['Feature MNL', 'Feature CDM', 'Context Mixture', 'In-Degree', 'Shared Neighbors', 'Reciprocal Weight', 'Time Since Send', 'Time Since Receive', 'Time Since Reciprocation', 'Random']
 
-    min_nll_indices = np.argmin(losses, axis=0)
-    max_acc_indices = np.argmax(accs, axis=0)
-    min_mean_rank_indices = np.argmin(mean_ranks, axis=0)
+    bar_width = 0.167
+    width_multiplier = 2
+    xs = [np.arange(len(datasets)) + (i * bar_width) for i in range(-2, 3)]
+    method_names = ['Feature MNL', 'Feature CDM', 'Mixed MNL', 'Context Mixture', 'Context Mixture EM']
 
-    min_nll_xs = (np.arange(len(datasets)) - 4.5 * bar_width) + (min_nll_indices * bar_width)
-    max_acc_xs = (np.arange(len(datasets)) - 4.5 * bar_width) + (max_acc_indices * bar_width)
-    min_mean_rank_xs = (np.arange(len(datasets)) - 4.5 * bar_width) + (min_mean_rank_indices * bar_width)
+    # With baselines
+    # bar_width = 0.07
+    # width_multiplier = 5.5
+    # xs = [np.arange(len(datasets)) + ((i + 0.5) * bar_width) for i in range(-6, 6)]
+    # method_names = ['Feature MNL', 'Feature CDM', 'Mixed MNL', 'Context Mixture', 'Context Mixture EM', 'In-Degree', 'Shared Neighbors', 'Reciprocal Weight', 'Time Since Send', 'Time Since Receive', 'Time Since Reciprocation', 'Random']
+
+    min_nll_indices = np.argmin(losses[:len(method_names)], axis=0)
+    max_acc_indices = np.argmax(accs[:len(method_names)], axis=0)
+    min_mean_rank_indices = np.argmin(mean_ranks[:len(method_names)], axis=0)
+
+    min_nll_xs = (np.arange(len(datasets)) - width_multiplier * bar_width) + (min_nll_indices * bar_width)
+    max_acc_xs = (np.arange(len(datasets)) - width_multiplier * bar_width) + (max_acc_indices * bar_width)
+    min_mean_rank_xs = (np.arange(len(datasets)) - width_multiplier * bar_width) + (min_mean_rank_indices * bar_width)
 
     min_nll_ys = losses[min_nll_indices, np.arange(len(datasets))] + 0.2
     max_acc_ys = accs[max_acc_indices, np.arange(len(datasets))] + 0.01
@@ -469,7 +475,7 @@ def plot_all_accuracies(datasets):
     axes[1].scatter(max_acc_xs, max_acc_ys, marker='*', color='black')
     axes[2].scatter(min_mean_rank_xs, min_mean_rank_ys, marker='*', color='black')
 
-    for i in range(10):
+    for i in range(len(method_names)):
         axes[0].bar(xs[i], losses[i], edgecolor='white', label=method_names[i], width=bar_width)
         axes[1].bar(xs[i], accs[i], edgecolor='white', label=method_names[i], width=bar_width)
         axes[2].bar(xs[i], mean_ranks[i], edgecolor='white', label=method_names[i], width=bar_width)
@@ -484,7 +490,7 @@ def plot_all_accuracies(datasets):
 
     axes[1].legend(bbox_to_anchor=(1.01, 0.5), loc='center left')
 
-    plt.savefig(f'{PLOT_DIR}/test_performance_with_baselines_em.pdf', bbox_inches='tight')
+    plt.savefig(f'{PLOT_DIR}/test_performance.pdf', bbox_inches='tight')
 
 
 def visualize_context_effects(datasets):
@@ -498,35 +504,36 @@ def visualize_context_effects(datasets):
         row = i // 4
         col = i % 4
 
-        model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_0.005_0.001.pt')
+        # model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_{dataset.best_lr(FeatureContextMixture)}_0.001.pt')
+        model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
 
-        # print('base utils:', model.intercepts.data)
-        # print('slops:', )
 
-        slopes = model.intercepts.data.numpy()
-        slopes /= np.max(np.abs(slopes))
-
+        slopes = model.slopes.data.numpy()
         all_slopes.append(slopes)
 
-        axes[row, col].matshow(slopes, cmap=cmap, vmin=-1, vmax=1)
+        axes[row, col].matshow(slopes, cmap=cmap)
+
+        print(dataset.name, slopes)
 
         axes[row, col].axis('off')
         axes[row, col].set_title(dataset.name, pad=0.1)
 
-    norm = mpl.colors.Normalize(vmin=-1, vmax=1)
+    # norm = mpl.colors.Normalize(vmin=-1, vmax=1)
 
     for col in range(1, 4):
         axes[3, col].axis('off')
 
-    plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axes[3, 1], orientation='horizontal')
 
-    axes[3, 2].matshow(np.mean(all_slopes, axis=0), cmap=cmap, vmin=-1, vmax=1)
-    axes[3, 2].set_title('Mean', pad=0.1)
+    vis = axes[3, 3].matshow(np.mean(all_slopes, axis=0), cmap=cmap)
+    axes[3, 3].set_title('Mean', pad=0.1)
 
-    axes[3, 3].matshow(np.std(all_slopes, axis=0), cmap=cmap, vmin=-1, vmax=1)
-    axes[3, 3].set_title('Std Dev', pad=0.1)
+    plt.colorbar(vis, ax=axes[:, :])
 
-    plt.savefig('learned_context_mixture_intercepts.pdf', bbox_inches='tight')
+
+    # axes[3, 3].matshow(np.std(all_slopes, axis=0), cmap=cmap, vmin=-1, vmax=1)
+    # axes[3, 3].set_title('Std Dev', pad=0.1)
+
+    plt.savefig('learned_context_mixture_slopes_em.pdf', bbox_inches='tight')
     plt.close()
 
 
@@ -534,26 +541,29 @@ def visualize_context_effects(datasets):
 
 
 if __name__ == '__main__':
-    datasets = [ExpediaDataset,
-                SyntheticCDMDataset, SyntheticMNLDataset,
-                WikiTalkDataset, RedditHyperlinkDataset,
-                BitcoinAlphaDataset, BitcoinOTCDataset,
-                SMSADataset, SMSBDataset, SMSCDataset,
-                EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-                FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
-                ]
+    network_datasets = [
+        SyntheticMNLDataset, SyntheticCDMDataset,
+        WikiTalkDataset, RedditHyperlinkDataset,
+        BitcoinAlphaDataset, BitcoinOTCDataset,
+        SMSADataset, SMSBDataset, SMSCDataset,
+        EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+        FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
+    ]
+
+    all_datasets = [ExpediaDataset, SushiDataset] + network_datasets
 
 
-    for dataset in datasets:
-        plot_grid_search(dataset)
+    # for dataset in all_datasets:
+    #     plot_grid_search(dataset)
 
-    # plot_expedia_accuracies()
+    # plot_general_choice_dataset_accuracies(SushiDataset)
 
-    # visualize_context_effects(datasets)
-    # compute_all_accuracies(datasets)
+    visualize_context_effects(network_datasets)
+    # compute_all_accuracies(network_datasets)
+    # plot_all_accuracies(network_datasets)
+
     # examine_choice_set_size_effects(datasets)
     #
-    # # plot_all_accuracies(datasets)
     #
     # for dataset in datasets + [SyntheticCDMDataset, SyntheticMNLDataset]:
     #     print(dataset.name)

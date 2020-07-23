@@ -1037,6 +1037,8 @@ class ExpediaDataset(Dataset):
     name = 'expedia'
     num_features = 5
 
+    feature_names = ['Star Rating', 'Review Score', 'Location Score', 'Price', 'On Promotion']
+
     @classmethod
     def load_into_pickle(cls, file_name):
         random.seed(0)
