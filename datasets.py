@@ -14,7 +14,9 @@ import networkx as nx
 import pandas as pd
 from tqdm import tqdm
 
+
 DATA_DIR = 'data'
+RESULT_DIR = 'results/triadic-closure-6-standard-feats'
 
 
 class Dataset(ABC):
@@ -252,6 +254,14 @@ class Dataset(ABC):
         choices = torch.tensor(choices)
 
         return graph, histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices
+
+
+    @classmethod
+    def best_lr(cls, method):
+        with open(f'{RESULT_DIR}/all_grid_search_results.pickle', 'rb') as f:
+            grid_search_losses, lrs = pickle.load(f)
+
+        return lrs[np.argmin([grid_search_losses[cls, method, lr] for lr in lrs])]
 
 
 class WikispeediaDataset(Dataset):

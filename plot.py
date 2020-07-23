@@ -142,13 +142,15 @@ def plot_compare_all():
 
 def plot_grid_search(dataset):
     with open(f'{RESULT_DIR}/all_grid_search_results.pickle', 'rb') as f:
-        data = pickle.load(f)
+        data, lrs = pickle.load(f)
 
     methods = [FeatureMNL, MNLMixture, FeatureCDM, FeatureContextMixture]
-    lrs = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
     markers = ['s', '^', 'o', 'P']
 
     for i, method in enumerate(methods):
+        losses = [data[dataset, method, lr] for lr in lrs]
+
+
         plt.plot(range(6), [data[dataset, method, lr] for lr in lrs], '.-', label=method.name, marker=markers[i])
 
     plt.xticks(range(6), lrs)

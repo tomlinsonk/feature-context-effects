@@ -273,27 +273,11 @@ def learn_binned_mnl(dataset):
         pickle.dump(data, f)
 
 
-def run_likelihood_ratio_test(dataset, lr, wd):
-    torch.random.manual_seed(0)
-    np.random.seed(0)
-    model = run_feature_model_full_dataset(MNLMixture, dataset, lr, wd)
-    print(model.utilities, model.weights)
-
-    torch.random.manual_seed(0)
-    np.random.seed(0)
-    model = run_feature_model_full_dataset(FeatureMNL, dataset, lr, wd)
-    print(model.utilities)
-
-    torch.random.manual_seed(0)
-    np.random.seed(0)
-
-    model = run_feature_model_full_dataset(FeatureContextMixture, dataset, lr, wd)
-    print(model.weights, model.intercepts, model.slopes)
-
-    torch.random.manual_seed(0)
-    np.random.seed(0)
-    model = run_feature_model_full_dataset(FeatureCDM, dataset, lr, wd)
-    print(model.weights, model.contexts)
+def run_likelihood_ratio_test(dataset, wd):
+    for method in [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]:
+        torch.random.manual_seed(0)
+        np.random.seed(0)
+        run_feature_model_full_dataset(method, dataset, dataset.best_lr(method), wd)
 
 
 def train_context_mixture_em(dataset):
@@ -319,7 +303,6 @@ def learning_rate_grid_search_helper(args):
                                                                                      lr=lr, weight_decay=0.001,
                                                                                      compute_val_stats=False)
     return args, train_losses[-1]
-
 
 
 def learning_rate_grid_search(datasets):
@@ -354,39 +337,28 @@ if __name__ == '__main__':
     weight_decay = 0.001
 
     datasets = [
-        # ExpediaDataset,
-        # SyntheticCDMDataset, SyntheticMNLDataset,
-        # WikiTalkDataset, RedditHyperlinkDataset,
-        # BitcoinAlphaDataset, BitcoinOTCDataset,
-        # SMSADataset, SMSBDataset, SMSCDataset,
-        # EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-        # FacebookWallDataset, CollegeMsgDataset,
+        ExpediaDataset,
+        SyntheticCDMDataset, SyntheticMNLDataset,
+        WikiTalkDataset, RedditHyperlinkDataset,
+        BitcoinAlphaDataset, BitcoinOTCDataset,
+        SMSADataset, SMSBDataset, SMSCDataset,
+        EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+        FacebookWallDataset, CollegeMsgDataset,
         MathOverflowDataset
     ]
 
-    learning_rate_grid_search(datasets)
+    # learning_rate_grid_search(datasets)
 
-    # for dataset in datasets:
+    for dataset in datasets:
 
-        # run_likelihood_ratio_test(dataset, learning_rate, weight_decay)
-        # train_context_mixture_em(dataset)
-        #
-        # torch.random.manual_seed(0)
-        # np.random.seed(0)
-        # run_feature_model_train_data(FeatureMNL, dataset, learning_rate, weight_decay)
-        #
-        # torch.random.manual_seed(0)
-        # np.random.seed(0)
-        # run_feature_model_train_data(FeatureCDM, dataset, learning_rate, weight_decay)
-        #
-        # torch.random.manual_seed(0)
-        # np.random.seed(0)
-        # run_feature_model_train_data(FeatureContextMixture, dataset, learning_rate, weight_decay)
-        # learn_binned_mnl(dataset)
-        #
-        # torch.random.manual_seed(0)
-        # np.random.seed(0)
-        # run_feature_model_train_data(MNLMixture, dataset, learning_rate, weight_decay)
+        run_likelihood_ratio_test(dataset, weight_decay)
+
+        train_context_mixture_em(dataset)
+
+        for method in [FeatureMNL, MNLMixture, FeatureCDM, FeatureContextMixture]:
+            torch.random.manual_seed(0)
+            np.random.seed(0)
+            run_feature_model_train_data(method, dataset, dataset.best_lr(method), weight_decay)
 
 
 
