@@ -529,7 +529,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
     #     print('Running on CPU')
 
     device = torch.device('cpu')
-    torch.set_num_threads(4)
+    torch.set_num_threads(1)
     # print('Running on CPU')
 
     model.device = device
