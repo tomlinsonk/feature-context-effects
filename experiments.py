@@ -292,7 +292,7 @@ def train_context_mixture_em(dataset):
 
 
 def learning_rate_grid_search_helper(args):
-    dataset, lr, method = args
+    dataset, method, lr = args
     graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
 
@@ -307,7 +307,7 @@ def learning_rate_grid_search_helper(args):
 
 def learning_rate_grid_search(datasets, methods):
     lrs = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
-    params = {(dataset, lr, method) for dataset in datasets for lr in lrs for method in methods}
+    params = {(dataset, method, lr) for dataset in datasets for lr in lrs for method in methods}
 
     results = dict()
 
@@ -386,19 +386,17 @@ if __name__ == '__main__':
     # methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
     methods = [FeatureCDM]
 
-    learning_rate_grid_search(datasets, methods)
-    # l1_regularization_grid_search(datasets, FeatureCDM)
-    #
-    # for dataset in datasets:
-    #
-    #     run_likelihood_ratio_test(dataset, weight_decay, methods)
-    #
-    #     train_context_mixture_em(dataset)
-    #
-    #     for method in methods:
-    #         torch.random.manual_seed(0)
-    #         np.random.seed(0)
-    #         run_feature_model_train_data(method, dataset, dataset.best_lr(method), weight_decay)
+    l1_regularization_grid_search(datasets, FeatureCDM)
+
+    for dataset in datasets:
+        run_likelihood_ratio_test(dataset, weight_decay, methods)
+
+        # train_context_mixture_em(dataset)
+
+        for method in methods:
+            torch.random.manual_seed(0)
+            np.random.seed(0)
+            run_feature_model_train_data(method, dataset, dataset.best_lr(method), weight_decay)
 
 
 

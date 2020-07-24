@@ -143,7 +143,7 @@ def plot_compare_all():
 
 
 def plot_grid_search(dataset):
-    with open(f'{RESULT_DIR}/all_grid_search_results.pickle', 'rb') as f:
+    with open(f'{CONFIG_DIR}/learning_rate_settings.pickle', 'rb') as f:
         data, lrs = pickle.load(f)
 
     methods = [FeatureMNL, MNLMixture, FeatureCDM, FeatureContextMixture]
@@ -151,9 +151,8 @@ def plot_grid_search(dataset):
 
     for i, method in enumerate(methods):
         losses = [data[dataset, method, lr] for lr in lrs]
+        plt.plot(range(6), losses, '.-', label=method.name, marker=markers[i])
 
-
-        plt.plot(range(6), [data[dataset, method, lr] for lr in lrs], '.-', label=method.name, marker=markers[i])
 
     plt.xticks(range(6), lrs)
     plt.xlabel('Learning Rate')
@@ -162,7 +161,6 @@ def plot_grid_search(dataset):
     plt.yscale('log')
     plt.legend()
     plt.show()
-
 
 
 def plot_dataset_stats():
@@ -538,6 +536,7 @@ def visualize_context_effects(datasets):
     plt.savefig('learned_context_mixture_slopes.pdf', bbox_inches='tight')
     plt.close()
 
+
 def visualize_context_effects_l1_reg(datasets):
     with open(f'{RESULT_DIR}/l1_regularization_grid_search_results.pickle', 'rb') as f:
         results, reg_params = pickle.load(f)
@@ -608,9 +607,7 @@ def visualize_context_effects_l1_reg(datasets):
         loss_ax.set_yticks(y_ticks)
         loss_ax.set_yticklabels(['', f'+{ymax_pcts/2:.2g}%', f'+{ymax_pcts:.2g}%'])
 
-
         loss_ax.yaxis.tick_right()
-
 
     plt.savefig('l1_regularization.pdf', bbox_inches='tight')
 
@@ -627,13 +624,12 @@ if __name__ == '__main__':
 
     all_datasets = [ExpediaDataset, SushiDataset] + network_datasets
 
-
-    # for dataset in all_datasets:
-    #     plot_grid_search(dataset)
+    for dataset in all_datasets:
+        plot_grid_search(dataset)
 
     # plot_general_choice_dataset_accuracies(SushiDataset)
 
-    visualize_context_effects_l1_reg(network_datasets)
+    # visualize_context_effects_l1_reg(network_datasets)
 
     # visualize_context_effects(network_datasets)
     # compute_all_accuracies(network_datasets)

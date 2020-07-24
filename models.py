@@ -635,7 +635,7 @@ def train_feature_mnl(train_data, val_data, num_features, lr=1e-4, weight_decay=
 
 
 def train_feature_cdm(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False, l1_reg=0):
-    model = FeatureCDM(num_features, l1_reg=0)
+    model = FeatureCDM(num_features, l1_reg=l1_reg)
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 
