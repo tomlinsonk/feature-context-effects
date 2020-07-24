@@ -323,8 +323,7 @@ def learning_rate_grid_search(datasets, methods):
     if os.path.isfile(filename):
         with open(filename, 'rb') as f:
             old_results, _ = pickle.load(f)
-            new_results = results
-            old_results.update(new_results)
+            old_results.update(results)
             results = old_results
 
     with open(filename, 'wb') as f:
