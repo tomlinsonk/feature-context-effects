@@ -362,7 +362,7 @@ def l1_regularization_grid_search(datasets, method):
     pool.close()
     pool.join()
 
-    filename = f'l1_regularization_grid_search_results.pickle'
+    filename = f'l1_regularization_grid_search_{method.name}results.pickle'
 
     with open(filename, 'wb') as f:
         pickle.dump((results, reg_params), f)
