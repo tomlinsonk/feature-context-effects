@@ -273,8 +273,8 @@ def learn_binned_mnl(dataset):
         pickle.dump(data, f)
 
 
-def run_likelihood_ratio_test(dataset, wd):
-    for method in [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]:
+def run_likelihood_ratio_test(dataset, wd, methods):
+    for method in methods:
         torch.random.manual_seed(0)
         np.random.seed(0)
         run_feature_model_full_dataset(method, dataset, dataset.best_lr(method), wd)
@@ -292,7 +292,7 @@ def train_context_mixture_em(dataset):
 
 
 def learning_rate_grid_search_helper(args):
-    dataset, method, lr = args
+    dataset, lr, method = args
     graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
 
@@ -305,12 +305,9 @@ def learning_rate_grid_search_helper(args):
     return args, train_losses[-1]
 
 
-def learning_rate_grid_search(datasets):
-
+def learning_rate_grid_search(datasets, methods):
     lrs = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
-    methods = [FeatureMNL, MNLMixture, FeatureCDM, FeatureContextMixture]
-
-    params = {(dataset, method, lr) for dataset in datasets for lr in lrs for method in methods}
+    params = {(dataset, lr, method) for dataset in datasets for lr in lrs for method in methods}
 
     results = dict()
 
@@ -322,27 +319,28 @@ def learning_rate_grid_search(datasets):
     pool.close()
     pool.join()
 
-
     filename = f'all_grid_search_results.pickle'
     if os.path.isfile(filename):
         with open(filename, 'rb') as f:
             old_results, _ = pickle.load(f)
-            results.update(old_results)
+            new_results = results
+            old_results.update(new_results)
+            results = old_results
 
     with open(filename, 'wb') as f:
         pickle.dump((results, lrs), f)
 
 
 def l1_regularization_grid_search_helper(args):
-    dataset, reg_param = args
+    dataset, reg_param, method = args
     graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
 
     torch.random.manual_seed(0)
     np.random.seed(0)
-    model, train_losses, train_accs, val_losses, val_accs = train_feature_context_mixture(all_data, val_data,
+    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](all_data, val_data,
         dataset.num_features,
-        lr=dataset.best_lr(FeatureContextMixture),
+        lr=dataset.best_lr(method),
         weight_decay=0.001,
         compute_val_stats=False,
         l1_reg=reg_param)
@@ -350,14 +348,13 @@ def l1_regularization_grid_search_helper(args):
     return args, model, train_losses[-1]
 
 
-def l1_regularization_grid_search(datasets):
+def l1_regularization_grid_search(datasets, method):
 
-    reg_params = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5]
+    reg_params = [0, 0.001, 0.005, 0.01, 0.05, 0.1]
 
-    params = {(dataset, reg_param) for dataset in datasets for reg_param in reg_params}
+    params = {(dataset, reg_param, method) for dataset in datasets for reg_param in reg_params}
 
     results = dict()
-
     pool = Pool(16)
 
     for args, model, loss in tqdm(pool.imap_unordered(l1_regularization_grid_search_helper, params), total=len(params)):
@@ -365,7 +362,6 @@ def l1_regularization_grid_search(datasets):
 
     pool.close()
     pool.join()
-
 
     filename = f'l1_regularization_grid_search_results.pickle'
 
@@ -388,18 +384,19 @@ if __name__ == '__main__':
         MathOverflowDataset
     ]
 
+    # methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
+    methods = [FeatureCDM]
 
-    l1_regularization_grid_search(datasets)
-
-    # learning_rate_grid_search(datasets)
-
+    learning_rate_grid_search(datasets, methods)
+    # l1_regularization_grid_search(datasets, FeatureCDM)
+    #
     # for dataset in datasets:
     #
-    #     run_likelihood_ratio_test(dataset, weight_decay)
+    #     run_likelihood_ratio_test(dataset, weight_decay, methods)
     #
     #     train_context_mixture_em(dataset)
     #
-    #     for method in [FeatureMNL, MNLMixture, FeatureCDM, FeatureContextMixture]:
+    #     for method in methods:
     #         torch.random.manual_seed(0)
     #         np.random.seed(0)
     #         run_feature_model_train_data(method, dataset, dataset.best_lr(method), weight_decay)

@@ -237,7 +237,7 @@ class FeatureCDM(nn.Module):
 
     name = 'feature_cdm'
 
-    def __init__(self, num_features, device=torch.device('cpu')):
+    def __init__(self, num_features, device=torch.device('cpu'), l1_reg=0):
         super().__init__()
 
         self.num_features = num_features
@@ -245,6 +245,7 @@ class FeatureCDM(nn.Module):
         self.contexts = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
 
         self.device = device
+        self.l1_reg = l1_reg
 
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
@@ -266,7 +267,7 @@ class FeatureCDM(nn.Module):
         :return: the loss
         """
 
-        return nn.functional.nll_loss(y_pred, y) + 0.01 * self.contexts.norm(1)
+        return nn.functional.nll_loss(y_pred, y) + self.l1_reg * self.contexts.norm(1)
 
 
 class FeatureContextMixture(nn.Module):
@@ -633,8 +634,8 @@ def train_feature_mnl(train_data, val_data, num_features, lr=1e-4, weight_decay=
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 
-def train_feature_cdm(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
-    model = FeatureCDM(num_features)
+def train_feature_cdm(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False, l1_reg=0):
+    model = FeatureCDM(num_features, l1_reg=0)
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 

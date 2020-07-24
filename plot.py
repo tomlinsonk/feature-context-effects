@@ -8,6 +8,7 @@ import statsmodels.api as sm
 import scipy.stats as stats
 import matplotlib as mpl
 import matplotlib.ticker as ticker
+from scipy.stats import chi2
 from tqdm import tqdm
 from scipy.ndimage.filters import gaussian_filter1d
 
@@ -23,6 +24,7 @@ from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, Feature
 PARAM_DIR = 'params/triadic-closure-6-standard-feats'
 RESULT_DIR = 'results/triadic-closure-6-standard-feats'
 PLOT_DIR = 'plots'
+CONFIG_DIR = 'config'
 
 
 def load_model(Model, n, dim, param_fname):
@@ -504,8 +506,8 @@ def visualize_context_effects(datasets):
         row = i // 4
         col = i % 4
 
-        # model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_{dataset.best_lr(FeatureContextMixture)}_0.001.pt')
-        model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
+        model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_{dataset.best_lr(FeatureContextMixture)}_0.001.pt')
+        # model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
 
 
         slopes = model.slopes.data.numpy()
@@ -533,11 +535,84 @@ def visualize_context_effects(datasets):
     # axes[3, 3].matshow(np.std(all_slopes, axis=0), cmap=cmap, vmin=-1, vmax=1)
     # axes[3, 3].set_title('Std Dev', pad=0.1)
 
-    plt.savefig('learned_context_mixture_slopes_em.pdf', bbox_inches='tight')
+    plt.savefig('learned_context_mixture_slopes.pdf', bbox_inches='tight')
     plt.close()
 
+def visualize_context_effects_l1_reg(datasets):
+    with open(f'{RESULT_DIR}/l1_regularization_grid_search_results.pickle', 'rb') as f:
+        results, reg_params = pickle.load(f)
+
+    with open(f'{CONFIG_DIR}/learning_rate_settings.pickle', 'rb') as f:
+        grid_search_losses, lrs = pickle.load(f)
+
+    reg_params = reg_params[:-2]
+
+    fig = plt.figure(figsize=(len(reg_params), len(datasets)*1.1), constrained_layout=False)
+    gs = fig.add_gridspec(len(datasets), len(reg_params), wspace=0, hspace=0.1)
+
+    for row, dataset in enumerate(datasets):
+        all_slopes = [results[dataset, reg_param][0].slopes.data.numpy() for reg_param in reg_params]
+
+        max_abs = np.max(np.abs(all_slopes))
+        vmin = -max_abs
+        vmax = max_abs
+
+        for col, reg_param in enumerate(reg_params):
+            ax = fig.add_subplot(gs[row, col])
+
+            if col == 0:
+                ax.set_ylabel(dataset.name, rotation='horizontal', ha='right', fontsize=14, va='center')
+            if row == 0:
+                if col == 0:
+                    ax.set_title(f'$\\lambda=${reg_param}', fontsize=12)
+                else:
+                    ax.set_title(f'{reg_param}', fontsize=12)
+
+            model, loss = results[dataset, reg_param]
+            ax.matshow(model.slopes.data.numpy(), cmap=mpl.cm.bwr, vmin=vmin, vmax=vmax, interpolation='nearest')
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+        losses = [results[dataset, reg_param][1] for reg_param in reg_params]
+
+        mixed_mnl_loss = min([grid_search_losses[dataset, MNLMixture, lr] for lr in lrs])
+
+        p = 0.001
+        ddof = dataset.num_features**2
+        sig_thresh = mixed_mnl_loss - 0.5 * chi2.isf(p, ddof)
+
+        ymax_pcts = 2
+        if dataset == EmailEnronDataset:
+            ymax_pcts = 4
+        elif dataset == EmailW3CDataset:
+            ymax_pcts = 10
+        elif dataset == SyntheticMNLDataset:
+            ymax_pcts = 0.04
+        elif dataset == SyntheticCDMDataset:
+            ymax_pcts = 2
+
+        y_min = min(losses + [sig_thresh])
+        y_ticks = [y_min, y_min * (1 + ymax_pcts / 200), y_min * (1 + ymax_pcts / 100)]
+
+        loss_ax = fig.add_subplot(gs[row, :])
+        loss_ax.plot(range(len(reg_params)), losses, color='black', alpha=0.7)
+        loss_ax.set_xlim(-0.5, len(reg_params) - 0.5)
 
 
+        loss_ax.set_ylim(min(y_ticks) * (1 - ymax_pcts / 1000), max(y_ticks))
+
+        loss_ax.hlines(sig_thresh, -0.5, len(reg_params) - 0.5, linestyles='dotted', colors='green')
+
+        loss_ax.patch.set_visible(False)
+        loss_ax.set_xticks([])
+        loss_ax.set_yticks(y_ticks)
+        loss_ax.set_yticklabels(['', f'+{ymax_pcts/2:.2g}%', f'+{ymax_pcts:.2g}%'])
+
+
+        loss_ax.yaxis.tick_right()
+
+
+    plt.savefig('l1_regularization.pdf', bbox_inches='tight')
 
 
 if __name__ == '__main__':
@@ -558,7 +633,9 @@ if __name__ == '__main__':
 
     # plot_general_choice_dataset_accuracies(SushiDataset)
 
-    visualize_context_effects(network_datasets)
+    visualize_context_effects_l1_reg(network_datasets)
+
+    # visualize_context_effects(network_datasets)
     # compute_all_accuracies(network_datasets)
     # plot_all_accuracies(network_datasets)
 
