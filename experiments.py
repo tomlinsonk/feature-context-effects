@@ -21,6 +21,8 @@ from models import train_history_cdm, train_lstm, train_history_mnl, train_featu
 training_methods = {HistoryCDM: train_history_cdm, HistoryMNL: train_history_mnl, LSTM: train_lstm, FeatureMNL: train_feature_mnl,
                     FeatureCDM: train_feature_cdm, FeatureContextMixture: train_feature_context_mixture, MNLMixture: train_mnl_mixture}
 
+CONFIG_DIR = 'config'
+
 
 def run_model(method, dataset, dim, lr, wd, beta=None, learn_beta=None):
     graph, train_data, val_data, test_data = dataset.load()
@@ -319,12 +321,7 @@ def learning_rate_grid_search(datasets, methods):
     pool.close()
     pool.join()
 
-    filename = f'all_grid_search_results.pickle'
-    if os.path.isfile(filename):
-        with open(filename, 'rb') as f:
-            old_results, _ = pickle.load(f)
-            old_results.update(results)
-            results = old_results
+    filename = f'{CONFIG_DIR}/learning_rate_settings.pickle'
 
     with open(filename, 'wb') as f:
         pickle.dump((results, lrs), f)
@@ -408,7 +405,7 @@ if __name__ == '__main__':
     l1_regularization_grid_search(datasets, FeatureCDM)
     l1_regularization_grid_search(datasets, FeatureContextMixture)
 
-    # all_experiments(datasets)
+    all_experiments(datasets)
 
 
 
