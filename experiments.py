@@ -13,7 +13,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
     RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
-    ExpediaDataset, SushiDataset
+    ExpediaDataset, SushiDataset, DistrictDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
     FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em, \
     MNLMixture, train_mnl_mixture
@@ -311,7 +311,7 @@ def learning_rate_grid_search(datasets, methods):
 
     results = dict()
 
-    pool = Pool(16)
+    pool = Pool(18)
 
     for args, loss in tqdm(pool.imap_unordered(learning_rate_grid_search_helper, params), total=len(params)):
         results[args] = loss
@@ -351,10 +351,10 @@ def l1_regularization_grid_search(datasets, method):
 
     reg_params = [0, 0.001, 0.005, 0.01, 0.05, 0.1]
 
-    params = {(dataset, reg_param, method) for dataset in datasets for reg_param in reg_params}
+    params = [(dataset, reg_param, method) for dataset in datasets for reg_param in reg_params]
 
     results = dict()
-    pool = Pool(16)
+    pool = Pool(18)
 
     for args, model, loss in tqdm(pool.imap_unordered(l1_regularization_grid_search_helper, params), total=len(params)):
         results[args] = model, loss
@@ -362,41 +362,53 @@ def l1_regularization_grid_search(datasets, method):
     pool.close()
     pool.join()
 
-    filename = f'l1_regularization_grid_search_{method.name}results.pickle'
+    filename = f'l1_regularization_grid_search_{method.name}_results.pickle'
 
     with open(filename, 'wb') as f:
         pickle.dump((results, reg_params), f)
 
 
-if __name__ == '__main__':
-    learning_rate = 0.0005
+def all_experiments_helper(dataset):
     weight_decay = 0.001
 
+    learn_binned_mnl(dataset)
+    run_likelihood_ratio_test(dataset, weight_decay, methods)
+
+    train_context_mixture_em(dataset)
+
+    for method in methods:
+        torch.random.manual_seed(0)
+        np.random.seed(0)
+        run_feature_model_train_data(method, dataset, dataset.best_lr(method), weight_decay)
+
+
+def all_experiments(datasets):
+    pool = Pool(18)
+    pool.map(all_experiments_helper, datasets)
+    pool.close()
+    pool.join()
+
+
+if __name__ == '__main__':
+
     datasets = [
-        SushiDataset, ExpediaDataset,
+        MathOverflowDataset,
+        FacebookWallDataset, CollegeMsgDataset,
+        DistrictDataset, SushiDataset, ExpediaDataset,
         SyntheticCDMDataset, SyntheticMNLDataset,
         WikiTalkDataset, RedditHyperlinkDataset,
         BitcoinAlphaDataset, BitcoinOTCDataset,
         SMSADataset, SMSBDataset, SMSCDataset,
-        EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-        FacebookWallDataset, CollegeMsgDataset,
-        MathOverflowDataset
+        EmailEnronDataset, EmailEUDataset, EmailW3CDataset
     ]
 
-    # methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
-    methods = [FeatureCDM]
+    methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
 
+    learning_rate_grid_search(datasets, methods)
     l1_regularization_grid_search(datasets, FeatureCDM)
+    l1_regularization_grid_search(datasets, FeatureContextMixture)
 
-    for dataset in datasets:
-        run_likelihood_ratio_test(dataset, weight_decay, methods)
-
-        # train_context_mixture_em(dataset)
-
-        for method in methods:
-            torch.random.manual_seed(0)
-            np.random.seed(0)
-            run_feature_model_train_data(method, dataset, dataset.best_lr(method), weight_decay)
+    # all_experiments(datasets)
 
 
 

@@ -1132,6 +1132,56 @@ class SushiDataset(Dataset):
             pickle.dump((nx.DiGraph(), train_data, val_data, test_data), f, protocol=4)
 
 
+class DistrictDataset(Dataset):
+    name = 'district'
+    num_features = 27
+
+    feature_names = ['points', 'var_xcoord', 'var_ycoord', 'varcoord_ratio', 'avgline', 'varline', 'boyce', 'lenwid',
+                     'jagged', 'parts', 'hull', 'bbox', 'reock', 'polsby', 'schwartzberg', 'circle_area',
+                     'circle_perim', 'hull_area', 'hull_perim', 'orig_area', 'district_perim', 'corners', 'xvar',
+                     'yvar', 'cornervar_ratio', 'sym_x', 'sym_y']
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        features = pd.read_csv(f'{DATA_DIR}/district-compactness/features.csv')
+
+        comparisons = pd.read_csv(f'{DATA_DIR}/district-compactness/paired_comparisons.csv')
+
+        feature_dict = {row['district']: row[cls.feature_names].to_numpy(dtype=float) for index, row in features.iterrows()}
+        district_to_index = {district: i for i, district in enumerate(sorted(feature_dict.keys()))}
+
+        samples = len(comparisons)
+        max_choice_set_size = 2
+
+        choice_sets = torch.full((samples, max_choice_set_size), -1, dtype=torch.long)
+        choice_sets_with_features = torch.zeros((samples, max_choice_set_size, cls.num_features), dtype=torch.float)
+        choice_set_lengths = torch.zeros(samples, dtype=torch.long)
+        choices = torch.zeros(samples, dtype=torch.long)
+
+        for index, row in comparisons.iterrows():
+            district1 = row['alternate_id_1']
+            district2 = row['alternate_id_2']
+            chosen = row['alternate_id_winner']
+            choice_set = [district_to_index[district1], district_to_index[district2]]
+
+            choice_sets[index] = torch.as_tensor(choice_set)
+            choices[index] = choice_set.index(district_to_index[chosen])
+            choice_set_lengths[index] = 2
+            choice_sets_with_features[index] = torch.as_tensor([feature_dict[district1], feature_dict[district2]])
+
+        train_data, val_data, test_data = cls.data_split(samples, torch.zeros_like(choices),
+                                                         torch.zeros_like(choices),
+                                                         choice_sets,
+                                                         choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=True)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((nx.DiGraph(), train_data, val_data, test_data), f, protocol=4)
+
+
 if __name__ == '__main__':
     # for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
     #                 BitcoinAlphaDataset, BitcoinOTCDataset,
@@ -1140,7 +1190,7 @@ if __name__ == '__main__':
     #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
     #     dataset.load_standardized()
 
-    SushiDataset.print_stats()
+    DistrictDataset.print_stats()
 
 
 

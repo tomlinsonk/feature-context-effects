@@ -1,3 +1,5 @@
+import time
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -521,7 +523,7 @@ def toy_example():
     print(model.beta)
 
 
-def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute_val_stats=True):
+def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute_val_stats=True, timeout_min=60):
     # if torch.cuda.is_available():
     #     device = torch.device('cuda:0')
     #     print('Running on GPU')
@@ -554,7 +556,9 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
     val_accs = []
     prev_total_loss = np.inf
 
-    for epoch in range(100):
+    start = time.time()
+
+    for epoch in range(500):
         train_loss = 0
         train_count = 0
         train_correct = 0
@@ -586,8 +590,12 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
         train_accs.append(train_correct / train_count)
         train_losses.append(total_loss)
 
-        if prev_total_loss - total_loss < prev_total_loss * 0.0000001 or total_loss < 0.001:
+        # timeout
+        if (time.time() - start) / 60 > timeout_min:
             break
+
+        # if prev_total_loss - total_loss < prev_total_loss * 0.0000001 or total_loss < 0.001:
+        #     break
         prev_total_loss = total_loss
         # print(model.contexts.detach().numpy())
 

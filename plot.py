@@ -17,7 +17,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
     RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
-    ExpediaDataset, SushiDataset
+    ExpediaDataset, SushiDataset, DistrictDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
     FeatureContextMixture, train_model, FeatureSelector, RandomSelector, MNLMixture
 
@@ -438,7 +438,7 @@ def plot_general_choice_dataset_accuracies(dataset):
     axes[2].set_xticklabels(method_names)
     axes[2].set_ylabel('Mean Correct Position')
 
-    plt.show()
+    plt.savefig(f'{PLOT_DIR}/{dataset.name}_test_results.pdf', bbox_inches='tight')
 
 
 def plot_all_accuracies(datasets):
@@ -537,20 +537,23 @@ def visualize_context_effects(datasets):
     plt.close()
 
 
-def visualize_context_effects_l1_reg(datasets):
-    with open(f'{RESULT_DIR}/l1_regularization_grid_search_results.pickle', 'rb') as f:
+def visualize_context_effects_l1_reg(datasets, method):
+    with open(f'{RESULT_DIR}/l1_regularization_grid_search_{method.name}_results.pickle', 'rb') as f:
         results, reg_params = pickle.load(f)
 
     with open(f'{CONFIG_DIR}/learning_rate_settings.pickle', 'rb') as f:
         grid_search_losses, lrs = pickle.load(f)
 
-    reg_params = reg_params[:-2]
+    if method == FeatureCDM:
+        reg_params.remove(0.001)
+    elif method == FeatureContextMixture:
+        reg_params = reg_params[:-2]
 
     fig = plt.figure(figsize=(len(reg_params), len(datasets)*1.1), constrained_layout=False)
     gs = fig.add_gridspec(len(datasets), len(reg_params), wspace=0, hspace=0.1)
 
     for row, dataset in enumerate(datasets):
-        all_slopes = [results[dataset, reg_param][0].slopes.data.numpy() for reg_param in reg_params]
+        all_slopes = [results[dataset, reg_param, method][0].slopes.data.numpy() if method == FeatureContextMixture else results[dataset, reg_param, method][0].contexts.data.numpy() for reg_param in reg_params]
 
         max_abs = np.max(np.abs(all_slopes))
         vmin = -max_abs
@@ -567,28 +570,34 @@ def visualize_context_effects_l1_reg(datasets):
                 else:
                     ax.set_title(f'{reg_param}', fontsize=12)
 
-            model, loss = results[dataset, reg_param]
-            ax.matshow(model.slopes.data.numpy(), cmap=mpl.cm.bwr, vmin=vmin, vmax=vmax, interpolation='nearest')
+            model, loss = results[dataset, reg_param, method]
+            ax.matshow(model.slopes.data.numpy() if method == FeatureContextMixture else model.contexts.data.numpy(), cmap=mpl.cm.bwr, vmin=vmin, vmax=vmax, interpolation='nearest')
             ax.set_xticks([])
             ax.set_yticks([])
 
-        losses = [results[dataset, reg_param][1] for reg_param in reg_params]
+        losses = [results[dataset, reg_param, method][1] for reg_param in reg_params]
 
-        mixed_mnl_loss = min([grid_search_losses[dataset, MNLMixture, lr] for lr in lrs])
+        baseline = MNLMixture if method == FeatureContextMixture else FeatureMNL
+        baseline_loss = min([grid_search_losses[dataset, baseline, lr] for lr in lrs])
 
-        p = 0.001
+        p = 1e-8
         ddof = dataset.num_features**2
-        sig_thresh = mixed_mnl_loss - 0.5 * chi2.isf(p, ddof)
+        sig_thresh = baseline_loss - 0.5 * chi2.isf(p, ddof)
 
         ymax_pcts = 2
-        if dataset == EmailEnronDataset:
-            ymax_pcts = 4
-        elif dataset == EmailW3CDataset:
-            ymax_pcts = 10
-        elif dataset == SyntheticMNLDataset:
-            ymax_pcts = 0.04
-        elif dataset == SyntheticCDMDataset:
-            ymax_pcts = 2
+
+        if method == FeatureContextMixture:
+            if dataset == EmailEnronDataset:
+                ymax_pcts = 4
+            elif dataset == EmailW3CDataset:
+                ymax_pcts = 10
+            elif dataset == SyntheticMNLDataset:
+                ymax_pcts = 0.04
+        else:
+            if dataset in (EmailEnronDataset, EmailW3CDataset, CollegeMsgDataset, MathOverflowDataset, SyntheticCDMDataset, BitcoinOTCDataset):
+                ymax_pcts = 4
+            elif dataset == SyntheticMNLDataset:
+                ymax_pcts = 0.1
 
         y_min = min(losses + [sig_thresh])
         y_ticks = [y_min, y_min * (1 + ymax_pcts / 200), y_min * (1 + ymax_pcts / 100)]
@@ -596,7 +605,6 @@ def visualize_context_effects_l1_reg(datasets):
         loss_ax = fig.add_subplot(gs[row, :])
         loss_ax.plot(range(len(reg_params)), losses, color='black', alpha=0.7)
         loss_ax.set_xlim(-0.5, len(reg_params) - 0.5)
-
 
         loss_ax.set_ylim(min(y_ticks) * (1 - ymax_pcts / 1000), max(y_ticks))
 
@@ -609,7 +617,9 @@ def visualize_context_effects_l1_reg(datasets):
 
         loss_ax.yaxis.tick_right()
 
-    plt.savefig('l1_regularization.pdf', bbox_inches='tight')
+    plt.suptitle('Linear Mixed Contexts Logit' if method == FeatureContextMixture else 'CDM-Based Model', y=0.91, fontsize=16)
+
+    plt.savefig(f'l1_regularization_{method.name}.pdf', bbox_inches='tight')
 
 
 if __name__ == '__main__':
@@ -622,14 +632,15 @@ if __name__ == '__main__':
         FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
     ]
 
-    all_datasets = [ExpediaDataset, SushiDataset] + network_datasets
+    all_datasets = [DistrictDataset, ExpediaDataset, SushiDataset] + network_datasets
 
     for dataset in all_datasets:
         plot_grid_search(dataset)
 
-    # plot_general_choice_dataset_accuracies(SushiDataset)
+    # plot_general_choice_dataset_accuracies(ExpediaDataset)
 
-    # visualize_context_effects_l1_reg(network_datasets)
+    # visualize_context_effects_l1_reg(network_datasets, FeatureCDM)
+    # visualize_context_effects_l1_reg(network_datasets, FeatureContextMixture)
 
     # visualize_context_effects(network_datasets)
     # compute_all_accuracies(network_datasets)
@@ -638,7 +649,7 @@ if __name__ == '__main__':
     # examine_choice_set_size_effects(datasets)
     #
     #
-    # for dataset in datasets + [SyntheticCDMDataset, SyntheticMNLDataset]:
+    # for dataset in network_datasets:
     #     print(dataset.name)
     #     plot_binned_mnl(dataset, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_0.005_0.001.pt')
 
