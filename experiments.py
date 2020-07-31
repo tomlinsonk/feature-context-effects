@@ -57,7 +57,7 @@ def run_feature_model_train_data(method, dataset, lr, wd):
 
     print(f'Training {method.name} on {dataset.name}, training data only (lr={lr}, wd={wd})')
 
-    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](train_data[3:], val_data[3:], dataset.num_features, lr=lr, weight_decay=wd, compute_val_stats=True)
+    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](train_data[3:], val_data[3:], dataset.num_features, lr=lr, weight_decay=wd, compute_val_stats=False)
     torch.save(model.state_dict(), f'{method.name}_{dataset.name}_train_params_{lr}_{wd}.pt')
     with open(f'{method.name}_{dataset.name}_train_losses_{lr}_{wd}.pickle', 'wb') as f:
         pickle.dump((train_losses, train_accs, val_losses, val_accs), f)
@@ -399,13 +399,17 @@ if __name__ == '__main__':
         EmailEnronDataset, EmailEUDataset, EmailW3CDataset
     ]
 
-    methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
+    torch.random.manual_seed(0)
+    np.random.seed(0)
+    run_feature_model_train_data(FeatureCDM, MathOverflowDataset, MathOverflowDataset.best_lr(FeatureCDM), 0.001)
 
-    learning_rate_grid_search(datasets, methods)
-    l1_regularization_grid_search(datasets, FeatureCDM)
-    l1_regularization_grid_search(datasets, FeatureContextMixture)
-
-    all_experiments(datasets)
+    # methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
+    #
+    # learning_rate_grid_search(datasets, methods)
+    # l1_regularization_grid_search(datasets, FeatureCDM)
+    # l1_regularization_grid_search(datasets, FeatureContextMixture)
+    #
+    # all_experiments(datasets)
 
 
 
