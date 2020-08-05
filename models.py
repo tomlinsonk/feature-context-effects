@@ -783,6 +783,9 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
             if time.time() > start_time + timeout_seconds:
                 break
 
+        if time.time() > start_time + timeout_seconds:
+            break
+
         B = Q.B.clone().detach()
         C = Q.C.clone().detach()
 
@@ -794,11 +797,7 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
         nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
 
         losses.append(nll)
-        end_iter_time = time.time()
-        iter_times.append(end_iter_time - start_time)
-
-        if end_iter_time > start_time + timeout_seconds:
-            break
+        iter_times.append(time.time() - start_time)
 
     if detailed_return:
         return model, losses, iter_times
