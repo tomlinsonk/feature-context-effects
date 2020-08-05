@@ -283,8 +283,6 @@ def run_likelihood_ratio_test(dataset, wd, methods):
 
 
 def train_context_mixture_em(dataset):
-    torch.set_num_threads(30)
-
     print('Running EM for', dataset.name)
     graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
@@ -386,6 +384,48 @@ def all_experiments(datasets):
     pool.join()
 
 
+def time_em(dataset):
+    torch.random.manual_seed(0)
+    np.random.seed(0)
+
+    lrs = [0.001, 0.01, 0.1]
+    num_epochs = [10, 50, 100]
+
+    print('Running EM for', dataset.name)
+    graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
+    all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
+
+    results = dict()
+    for lr in lrs:
+        for epochs in num_epochs:
+            model, losses, times = context_mixture_em(all_data, dataset.num_features, lr=lr, epochs=epochs, detailed_return=True, timeout_seconds=180)
+            results[lr, epochs] = losses, times
+
+            plt.plot(times, losses)
+            plt.title(f'{lr}, {epochs}')
+            plt.show()
+            plt.close()
+
+    with open(f'{dataset.name}_em_timing.pickle', 'wb') as f:
+        pickle.dump(results, f)
+
+
+def time_all_em(datasets):
+    pool = Pool(len(datasets))
+    pool.map(time_em, datasets)
+    pool.close()
+    pool.join()
+
+    all_results = dict()
+
+    for dataset in datasets:
+        with open(f'{dataset.name}_em_timing.pickle', 'rb') as f:
+            all_results[dataset] = pickle.load(f)
+
+    with open(f'all_datasets_em_timing.pickle', 'wb') as f:
+        pickle.dump(all_results, f)
+
+
 if __name__ == '__main__':
 
     datasets = [
@@ -399,10 +439,10 @@ if __name__ == '__main__':
         EmailEnronDataset, EmailEUDataset, EmailW3CDataset
     ]
 
-    torch.random.manual_seed(0)
-    np.random.seed(0)
-    run_feature_model_train_data(FeatureCDM, MathOverflowDataset, MathOverflowDataset.best_lr(FeatureCDM), 0.001)
+    time_all_em(datasets)
 
+    # run_feature_model_train_data(FeatureCDM, MathOverflowDataset, MathOverflowDataset.best_lr(FeatureCDM), 0.001)
+    #
     # methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
     #
     # learning_rate_grid_search(datasets, methods)

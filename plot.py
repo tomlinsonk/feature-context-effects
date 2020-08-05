@@ -7,10 +7,12 @@ import torch
 import statsmodels.api as sm
 import scipy.stats as stats
 import matplotlib as mpl
+import matplotlib.patches as patches
 import matplotlib.ticker as ticker
 from scipy.stats import chi2
 from tqdm import tqdm
 from scipy.ndimage.filters import gaussian_filter1d
+from sklearn.manifold import TSNE
 
 
 from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
@@ -21,8 +23,8 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
     FeatureContextMixture, train_model, FeatureSelector, RandomSelector, MNLMixture
 
-PARAM_DIR = 'params/triadic-closure-6-standard-feats'
-RESULT_DIR = 'results/triadic-closure-6-standard-feats'
+PARAM_DIR = 'params/500-epochs'
+RESULT_DIR = 'results/500-epochs'
 PLOT_DIR = 'plots'
 CONFIG_DIR = 'config'
 
@@ -279,10 +281,10 @@ def plot_binned_mnl(dataset, model_param_fname):
     all_data = [choice_set_features, choice_set_lengths, choices]
     wls_nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
 
-    mnl = load_feature_model(FeatureMNL, n_feats, f'{PARAM_DIR}/feature_mnl_{dataset.name}_params_0.005_0.001.pt')
+    mnl = load_feature_model(FeatureMNL, n_feats, f'{PARAM_DIR}/feature_mnl_{dataset.name}_params_{dataset.best_lr(FeatureMNL)}_0.001.pt')
     mnl_nll = torch.nn.functional.nll_loss(mnl(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
 
-    cdm = load_feature_model(FeatureCDM, n_feats, f'{PARAM_DIR}/feature_cdm_{dataset.name}_params_0.005_0.001.pt')
+    cdm = load_feature_model(FeatureCDM, n_feats, f'{PARAM_DIR}/feature_cdm_{dataset.name}_params_{dataset.best_lr(FeatureCDM)}_0.001.pt')
     cdm_nll = torch.nn.functional.nll_loss(cdm(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
 
     axes[0, 1].text(0.37, 0.67, f'Mix NLL: {sgd_nll:.0f}\nWLS NLL: {wls_nll:.0f}\nMNL NLL: {mnl_nll:.0f}\nCDM NLL: {cdm_nll:.0f}', transform=axes[0, 1].transAxes)
@@ -498,22 +500,20 @@ def visualize_context_effects(datasets):
 
     cmap = mpl.cm.bwr
 
-    all_slopes = []
+    all_contexts = []
 
     for i, dataset in enumerate(datasets):
         row = i // 4
         col = i % 4
 
-        model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_{dataset.best_lr(FeatureContextMixture)}_0.001.pt')
-        # model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
+        model = load_feature_model(FeatureCDM, 6, f'{PARAM_DIR}/feature_cdm_{dataset.name}_params_{dataset.best_lr(FeatureCDM)}_0.001.pt')
 
+        contexts = model.contexts.data.numpy()
+        all_contexts.append(contexts)
 
-        slopes = model.slopes.data.numpy()
-        all_slopes.append(slopes)
+        axes[row, col].matshow(contexts, cmap=cmap)
 
-        axes[row, col].matshow(slopes, cmap=cmap)
-
-        print(dataset.name, slopes)
+        print(dataset.name, contexts)
 
         axes[row, col].axis('off')
         axes[row, col].set_title(dataset.name, pad=0.1)
@@ -523,17 +523,13 @@ def visualize_context_effects(datasets):
     for col in range(1, 4):
         axes[3, col].axis('off')
 
-
-    vis = axes[3, 3].matshow(np.mean(all_slopes, axis=0), cmap=cmap)
+    vis = axes[3, 3].matshow(np.mean(all_contexts, axis=0), cmap=cmap)
     axes[3, 3].set_title('Mean', pad=0.1)
 
     plt.colorbar(vis, ax=axes[:, :])
 
 
-    # axes[3, 3].matshow(np.std(all_slopes, axis=0), cmap=cmap, vmin=-1, vmax=1)
-    # axes[3, 3].set_title('Std Dev', pad=0.1)
-
-    plt.savefig('learned_context_mixture_slopes.pdf', bbox_inches='tight')
+    plt.savefig('learned_lcl_contexts.pdf', bbox_inches='tight')
     plt.close()
 
 
@@ -580,7 +576,7 @@ def visualize_context_effects_l1_reg(datasets, method):
         baseline = MNLMixture if method == FeatureContextMixture else FeatureMNL
         baseline_loss = min([grid_search_losses[dataset, baseline, lr] for lr in lrs])
 
-        p = 1e-8
+        p = 0.001
         ddof = dataset.num_features**2
         sig_thresh = baseline_loss - 0.5 * chi2.isf(p, ddof)
 
@@ -594,10 +590,12 @@ def visualize_context_effects_l1_reg(datasets, method):
             elif dataset == SyntheticMNLDataset:
                 ymax_pcts = 0.04
         else:
-            if dataset in (EmailEnronDataset, EmailW3CDataset, CollegeMsgDataset, MathOverflowDataset, SyntheticCDMDataset, BitcoinOTCDataset):
+            if dataset in (EmailEnronDataset, EmailW3CDataset, CollegeMsgDataset, SyntheticCDMDataset, BitcoinOTCDataset, SMSBDataset):
                 ymax_pcts = 4
             elif dataset == SyntheticMNLDataset:
                 ymax_pcts = 0.1
+            elif dataset == MathOverflowDataset:
+                ymax_pcts = 6
 
         y_min = min(losses + [sig_thresh])
         y_ticks = [y_min, y_min * (1 + ymax_pcts / 200), y_min * (1 + ymax_pcts / 100)]
@@ -617,29 +615,163 @@ def visualize_context_effects_l1_reg(datasets, method):
 
         loss_ax.yaxis.tick_right()
 
-    plt.suptitle('Linear Mixed Contexts Logit' if method == FeatureContextMixture else 'CDM-Based Model', y=0.91, fontsize=16)
+    # plt.suptitle('DLCL' if method == FeatureContextMixture else 'LCL', y=0.91, fontsize=16)
 
     plt.savefig(f'l1_regularization_{method.name}.pdf', bbox_inches='tight')
 
 
+def lcl_context_effect_tsne(datasets):
+    vectors = []
+    matrix_map = dict()
+
+    for i, dataset in enumerate(datasets):
+        model = load_feature_model(FeatureCDM, 6, f'{PARAM_DIR}/feature_cdm_{dataset.name}_params_{dataset.best_lr(FeatureCDM)}_0.001.pt')
+        flat = model.contexts.data.numpy().flatten()
+        flat /= np.linalg.norm(flat)
+        vectors.append(flat)
+        matrix_map[dataset] = flat.reshape(6, 6)
+
+    vectors = np.array(vectors)
+
+    tsne = TSNE(n_components=2, random_state=1, perplexity=2)
+    projected = tsne.fit_transform(vectors)
+
+    fig, main_ax = plt.subplots(1)
+
+    plt.scatter(projected[:, 0], projected[:, 1])
+    # plt.title('Learned LCL Context Effect t-SNE')
+
+    offsets = {dataset.name: (5, 0) for dataset in datasets}
+    has = {dataset.name: 'left' for dataset in datasets}
+    vas = {dataset.name: 'center' for dataset in datasets}
+
+    has['email-W3C'] = 'right'
+    has['email-enron'] = 'right'
+    has['bitcoin-alpha'] = 'right'
+    has['bitcoin-otc'] = 'right'
+
+    offsets['email-W3C'] = (-5, 0)
+    offsets['email-enron'] = (-5, 0)
+    offsets['bitcoin-alpha'] = (-5, 0)
+    offsets['bitcoin-otc'] = (-5, 0)
+
+    for i, txt in enumerate([dataset.name for dataset in datasets]):
+        plt.annotate(txt, xy=projected[i], horizontalalignment=has[txt], verticalalignment=vas[txt], xytext=offsets[txt], textcoords='offset points')
+
+
+    vscale = 0.5
+
+    # mathoverflow + facebook-wall
+    cluster_datasets = [MathOverflowDataset, FacebookWallDataset]
+    cluster_matrices = [matrix_map[d] for d in cluster_datasets]
+    cluster_matrix = np.mean(cluster_matrices, axis=0)
+    ax = plt.axes([.45, .725, .1, .1])
+    ax.matshow(cluster_matrix, cmap='bwr', vmax=vscale, vmin=-vscale, interpolation='nearest')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    rect = patches.Rectangle((-360, 250), 420, 150, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
+    main_ax.add_patch(rect)
+
+    # sms + reddit-hyperlink
+    cluster_datasets = [SMSADataset, SMSBDataset, SMSCDataset, RedditHyperlinkDataset]
+    cluster_matrices = [matrix_map[d] for d in cluster_datasets]
+    cluster_matrix = np.mean(cluster_matrices, axis=0)
+    ax = plt.axes([.35, .45, .1, .1])
+    ax.matshow(cluster_matrix, cmap='bwr', vmax=vscale, vmin=-vscale, interpolation='nearest')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    rect = patches.Rectangle((-475, -100), 460, 210, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
+    main_ax.add_patch(rect)
+
+    # email-eu + wiki-talk + college-msg
+    cluster_datasets = [EmailEUDataset, WikiTalkDataset, CollegeMsgDataset]
+    cluster_matrices = [matrix_map[d] for d in cluster_datasets]
+    cluster_matrix = np.mean(cluster_matrices, axis=0)
+    ax = plt.axes([.55, .20, .1, .1])
+    ax.matshow(cluster_matrix, cmap='bwr', vmax=vscale, vmin=-vscale, interpolation='nearest')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    rect = patches.Rectangle((-200, -340), 380, 190, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
+    main_ax.add_patch(rect)
+
+    # bitcoin + email
+    cluster_datasets = [BitcoinOTCDataset, BitcoinAlphaDataset, EmailEnronDataset, EmailW3CDataset]
+    cluster_matrices = [matrix_map[d] for d in cluster_datasets]
+    cluster_matrix = np.mean(cluster_matrices, axis=0)
+    ax = plt.axes([.72, .71, .1, .1])
+    ax.matshow(cluster_matrix, cmap='bwr', vmax=vscale, vmin=-vscale, interpolation='nearest')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    rect = patches.Rectangle((200, -50), 250, 440, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
+    main_ax.add_patch(rect)
+
+    plt.savefig('lcl-tsne.pdf', bbox_inches='tight')
+    plt.close()
+
+
+def dlcl_context_effect_tsne(datasets):
+    matrices = []
+
+    for i, dataset in enumerate(datasets):
+        model = load_feature_model(FeatureContextMixture, 6, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_{dataset.best_lr(FeatureContextMixture)}_0.001.pt')
+
+        flat = model.slopes.data.numpy().flatten()
+        matrices.append(flat / np.linalg.norm(flat))
+
+    matrices = np.array(matrices)
+
+    tsne = TSNE(n_components=2, random_state=0, perplexity=3)
+    projected = tsne.fit_transform(matrices)
+
+    plt.scatter(projected[:, 0], projected[:, 1])
+
+    offsets = {dataset.name: (5, 0) for dataset in datasets}
+    has = {dataset.name: 'left' for dataset in datasets}
+    vas = {dataset.name: 'center' for dataset in datasets}
+
+    has['synthetic-cdm'] = 'right'
+    has['synthetic-mnl'] = 'right'
+    has['mathoverflow'] = 'right'
+
+    offsets['synthetic-cdm'] = (-5, 0)
+    offsets['synthetic-mnl'] = (-3, -7)
+    offsets['mathoverflow'] = (0, -10)
+
+    for i, txt in enumerate([dataset.name for dataset in datasets]):
+        plt.annotate(txt, xy=projected[i], horizontalalignment=has[txt], verticalalignment=vas[txt],
+                     xytext=offsets[txt], textcoords='offset points')
+
+    plt.title('Learned LCL Context Effect t-SNE')
+    plt.savefig('dlcl-tsne.pdf', bbox_inches='tight')
+    plt.close()
+
+
 if __name__ == '__main__':
-    network_datasets = [
-        SyntheticMNLDataset, SyntheticCDMDataset,
+
+    synthetic_datasets = [SyntheticMNLDataset, SyntheticCDMDataset]
+    real_network_datasets = [
         WikiTalkDataset, RedditHyperlinkDataset,
         BitcoinAlphaDataset, BitcoinOTCDataset,
         SMSADataset, SMSBDataset, SMSCDataset,
         EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
         FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
     ]
+    general_datasets = [DistrictDataset, ExpediaDataset, SushiDataset]
 
-    all_datasets = [DistrictDataset, ExpediaDataset, SushiDataset] + network_datasets
 
-    for dataset in all_datasets:
-        plot_grid_search(dataset)
+    network_datasets = synthetic_datasets + real_network_datasets
+    all_datasets = general_datasets + network_datasets
 
-    # plot_general_choice_dataset_accuracies(ExpediaDataset)
+    lcl_context_effect_tsne(real_network_datasets)
+    dlcl_context_effect_tsne(real_network_datasets)
 
-    # visualize_context_effects_l1_reg(network_datasets, FeatureCDM)
+    # for dataset in all_datasets:
+    #     plot_grid_search(dataset)
+
+    # for dataset in general_datasets:
+    #     plot_general_choice_dataset_accuracies(dataset)
+
+    visualize_context_effects_l1_reg(network_datasets, FeatureCDM)
     # visualize_context_effects_l1_reg(network_datasets, FeatureContextMixture)
 
     # visualize_context_effects(network_datasets)
@@ -651,6 +783,6 @@ if __name__ == '__main__':
     #
     # for dataset in network_datasets:
     #     print(dataset.name)
-    #     plot_binned_mnl(dataset, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_0.005_0.001.pt')
+    #     plot_binned_mnl(dataset, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_{dataset.best_lr(FeatureContextMixture)}_0.001.pt')
 
 

@@ -723,7 +723,9 @@ def train_lstm(n, train_data, val_data, dim=64, lr=1e-4, weight_decay=1e-4, beta
     return model, train_losses, train_accs, val_losses, val_accs
 
 
-def context_mixture_em(train_data, num_features):
+def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_return=False, timeout_seconds=None):
+    torch.set_num_threads(1)
+
     n = num_features
 
     choice_set_features, choice_set_lengths, choices = train_data
@@ -741,8 +743,14 @@ def context_mixture_em(train_data, num_features):
 
     nll = np.inf
     prev_nll = np.inf
+    start_time = time.time()
+    iter_times = []
+    losses = []
 
-    while nll * 1.0000001 < prev_nll or nll == np.inf:
+    model = FeatureContextMixture(num_features)
+
+    while nll * 1.0000001 < prev_nll or nll == np.inf or timeout_seconds is not None:
+
         # Use learned linear context model to compute utility matrices for each sample
         utility_matrices = B + C * (torch.ones(n, 1) @ mean_choice_set_features[:, None, :])
 
@@ -757,12 +765,12 @@ def context_mixture_em(train_data, num_features):
         alpha = responsibilities.sum(0) / batch_size
 
         Q = EMAlgorithmQ(num_features, responsibilities, mean_choice_set_features)
-        optimizer = torch.optim.Adam(Q.parameters(), lr=0.005, weight_decay=0, amsgrad=True)
+        optimizer = torch.optim.Adam(Q.parameters(), lr=lr, weight_decay=0, amsgrad=True)
 
         prev_loss = np.inf
         total_loss = np.inf
 
-        for epoch in tqdm(range(100)):
+        for epoch in range(epochs):
             prev_loss = total_loss
             total_loss = 0
             for batch in train_data_loader:
@@ -772,25 +780,27 @@ def context_mixture_em(train_data, num_features):
                 loss.backward()
                 optimizer.step()
 
-            if total_loss * 1.00001 > prev_loss:
-                break
-
         B = Q.B.clone().detach()
         C = Q.C.clone().detach()
 
-        test_model = FeatureContextMixture(num_features)
-        test_model.intercepts.data = B
-        test_model.slopes.data = C
-        test_model.weights.data = alpha
+        model.intercepts.data = B
+        model.slopes.data = C
+        model.weights.data = alpha
 
         prev_nll = nll
-        nll = torch.nn.functional.nll_loss(test_model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
+        nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
         print('NLL:', nll)
 
-    model = FeatureContextMixture(num_features)
-    model.intercepts.data = B
-    model.slopes.data = C
-    model.weights.data = alpha
+        losses.append(nll)
+        end_iter_time = time.time()
+        iter_times.append(end_iter_time - start_time)
+
+        if end_iter_time > start_time + timeout_seconds:
+            print('timeout: more than', timeout_seconds, 'seconds elapsed')
+            break
+
+    if detailed_return:
+        return model, losses, iter_times
 
     return model
 
