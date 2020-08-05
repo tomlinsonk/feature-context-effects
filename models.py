@@ -789,14 +789,12 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
 
         prev_nll = nll
         nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
-        print('NLL:', nll)
 
         losses.append(nll)
         end_iter_time = time.time()
         iter_times.append(end_iter_time - start_time)
 
         if end_iter_time > start_time + timeout_seconds:
-            print('timeout: more than', timeout_seconds, 'seconds elapsed')
             break
 
     if detailed_return:
