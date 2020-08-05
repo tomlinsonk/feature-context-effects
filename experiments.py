@@ -340,7 +340,7 @@ def validation_loss_grid_search_helper(args):
 
 def validation_loss_grid_search(datasets, methods):
     lrs = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
-    wds = [0, 0.0001, 0.001, 0.01]
+    wds = [0, 0.0001, 0.0005, 0.001, 0.005, 0.01]
 
     params = {(dataset, method, lr, wd) for dataset in datasets for lr in lrs for method in methods for wd in wds}
 
