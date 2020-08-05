@@ -459,15 +459,15 @@ class LSTM(nn.Module):
 
 class EMAlgorithmQ(nn.Module):
 
-    def __init__(self, num_features, r, mean_cs_features, device=torch.device('cpu')):
+    def __init__(self, num_features, r, mean_cs_features, B_init, C_init, device=torch.device('cpu')):
         super().__init__()
 
         self.num_features = num_features
         self.r = r
         self.mean_cs_features = mean_cs_features
 
-        self.B = nn.Parameter(torch.ones(self.num_features, self.num_features), requires_grad=True)
-        self.C = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
+        self.B = nn.Parameter(B_init, requires_grad=True)
+        self.C = nn.Parameter(C_init, requires_grad=True)
 
         self.device = device
 
@@ -599,12 +599,13 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
         prev_total_loss = total_loss
         # print(model.contexts.detach().numpy())
 
+        print(total_loss)
+
         if compute_val_stats:
             total_val_loss = 0
             val_loss = 0
             val_count = 0
             val_correct = 0
-            val_top5 = 0
             model.eval()
             for batch in val_data_loader:
                 choices = batch[-1]
@@ -615,13 +616,12 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
                 val_loss += loss.item()
 
                 total_val_loss += nn.functional.nll_loss(choice_pred, choices, reduction='sum').item()
-
-                vals, idxs = torch.topk(choice_pred, 10, dim=1)
-                val_top5 += (idxs == choices[:, None]).long().sum().item() / choice_pred.size(0)
                 val_count += 1
 
             val_losses.append(val_loss / val_count)
             val_accs.append(val_correct / val_count)
+
+            # print(val_accs[-1])
 
     # print('Total loss:', total_loss)
     return model, train_losses, train_accs, val_losses, val_accs
@@ -723,7 +723,7 @@ def train_lstm(n, train_data, val_data, dim=64, lr=1e-4, weight_decay=1e-4, beta
     return model, train_losses, train_accs, val_losses, val_accs
 
 
-def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_return=False, timeout_seconds=None):
+def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_return=False, timeout_seconds=None, initialize_from=None):
     torch.set_num_threads(1)
 
     n = num_features
@@ -733,6 +733,11 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
     B = torch.ones(n, n, requires_grad=False).float()
     C = torch.zeros(n, n, requires_grad=False).float()
     alpha = torch.ones(n, requires_grad=False).float() / n
+
+    if initialize_from is not None:
+        B = initialize_from.intercepts.clone().detach()
+        C = initialize_from.slopes.clone().detach()
+        alpha = torch.softmax(initialize_from.weights.clone().detach(), 0)
 
     # Compute mean of each feature over each choice set
     batch_size, max_choice_set_len, _ = choice_set_features.size()
@@ -749,6 +754,15 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
 
     model = FeatureContextMixture(num_features)
 
+    model.intercepts.data = B
+    model.slopes.data = C
+    model.weights.data = torch.log(alpha)
+
+    prev_nll = nll
+    nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
+
+    print('START NLL:', nll)
+
     while nll * 1.0000001 < prev_nll or nll == np.inf or timeout_seconds is not None:
 
         # Use learned linear context model to compute utility matrices for each sample
@@ -764,12 +778,13 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
         responsibilities = nn.functional.softmax(log_probs + torch.log(alpha), 1)
         alpha = responsibilities.sum(0) / batch_size
 
-        Q = EMAlgorithmQ(num_features, responsibilities, mean_choice_set_features)
+        Q = EMAlgorithmQ(num_features, responsibilities, mean_choice_set_features, B, C)
         optimizer = torch.optim.Adam(Q.parameters(), lr=lr, weight_decay=0, amsgrad=True)
 
         prev_loss = np.inf
         total_loss = np.inf
 
+        print('START')
         for epoch in range(epochs):
             prev_loss = total_loss
             total_loss = 0
@@ -780,21 +795,27 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
                 loss.backward()
                 optimizer.step()
 
+            # print(total_loss)
+
+            if timeout_seconds is not None:
+                if time.time() > start_time + timeout_seconds:
+                    break
+
+        if timeout_seconds is not None:
             if time.time() > start_time + timeout_seconds:
                 break
-
-        if time.time() > start_time + timeout_seconds:
-            break
 
         B = Q.B.clone().detach()
         C = Q.C.clone().detach()
 
         model.intercepts.data = B
         model.slopes.data = C
-        model.weights.data = alpha
+        model.weights.data = torch.log(alpha)
 
         prev_nll = nll
         nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
+
+        print(nll)
 
         losses.append(nll)
         iter_times.append(time.time() - start_time)

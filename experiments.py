@@ -325,6 +325,41 @@ def learning_rate_grid_search(datasets, methods):
         pickle.dump((results, lrs), f)
 
 
+def validation_loss_grid_search_helper(args):
+    dataset, method, lr, wd = args
+    graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
+
+    torch.random.manual_seed(0)
+    np.random.seed(0)
+    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](train_data[3:], val_data[3:],
+                                                                                     dataset.num_features,
+                                                                                     lr=lr, weight_decay=wd,
+                                                                                     compute_val_stats=True)
+    return args, train_losses, train_accs, val_losses, val_accs
+
+
+def validation_loss_grid_search(datasets, methods):
+    lrs = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
+    wds = [0, 0.0001, 0.0005, 0.001, 0.005, 0.01]
+
+    params = {(dataset, method, lr, wd) for dataset in datasets for lr in lrs for method in methods for wd in wds}
+
+    results = dict()
+
+    pool = Pool(18)
+
+    for args, loss in tqdm(pool.imap_unordered(validation_loss_grid_search_helper, params), total=len(params)):
+        results[args] = loss
+
+    pool.close()
+    pool.join()
+
+    filename = f'{CONFIG_DIR}/validation_loss_lr_wd_settings.pickle'
+
+    with open(filename, 'wb') as f:
+        pickle.dump((results, lrs), f)
+
+
 def l1_regularization_grid_search_helper(args):
     dataset, reg_param, method = args
     graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
@@ -384,12 +419,12 @@ def all_experiments(datasets):
     pool.join()
 
 
-def time_em(dataset):
+def time_em(dataset, init_model=None):
     torch.random.manual_seed(0)
     np.random.seed(0)
 
-    lrs = [0.001, 0.01, 0.1]
-    num_epochs = [10, 50, 100]
+    lrs = [0.01]
+    num_epochs = [100]
 
     print('Running EM for', dataset.name)
     graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
@@ -398,16 +433,16 @@ def time_em(dataset):
     results = dict()
     for lr in lrs:
         for epochs in num_epochs:
-            model, losses, times = context_mixture_em(all_data, dataset.num_features, lr=lr, epochs=epochs, detailed_return=True, timeout_seconds=180)
+            model, losses, times = context_mixture_em(all_data, dataset.num_features, lr=lr, epochs=epochs, detailed_return=True, timeout_seconds=180, initialize_from=init_model)
             results[lr, epochs] = losses, times
 
-            plt.plot(times, losses)
-            plt.title(f'{lr}, {epochs}')
-            plt.show()
-            plt.close()
+            # plt.plot(times, losses)
+            # plt.title(f'{lr}, {epochs}')
+            # plt.show()
+            # plt.close()
 
-    with open(f'{dataset.name}_em_timing.pickle', 'wb') as f:
-        pickle.dump(results, f)
+    # with open(f'{dataset.name}_em_timing.pickle', 'wb') as f:
+    #     pickle.dump(results, f)
 
 
 def time_all_em(datasets):
@@ -439,11 +474,18 @@ if __name__ == '__main__':
         EmailEnronDataset, EmailEUDataset, EmailW3CDataset
     ]
 
-    time_all_em(datasets)
+    # model = run_feature_model_full_dataset(FeatureContextMixture, DistrictDataset, 0.01, 0)
+
+    # time_em(DistrictDataset)
+
+    # time_all_em(datasets)
 
     # run_feature_model_train_data(FeatureCDM, MathOverflowDataset, MathOverflowDataset.best_lr(FeatureCDM), 0.001)
     #
-    # methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
+    methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
+
+    validation_loss_grid_search(datasets, methods)
+
     #
     # learning_rate_grid_search(datasets, methods)
     # l1_regularization_grid_search(datasets, FeatureCDM)

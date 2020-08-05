@@ -746,6 +746,28 @@ def dlcl_context_effect_tsne(datasets):
     plt.close()
 
 
+def plot_em_timing(dataset):
+    lrs = [0.001, 0.01, 0.1]
+    num_epochs = [10, 50, 100]
+
+    with open(f'{RESULT_DIR}/all_datasets_em_timing.pickle', 'rb') as f:
+        results = pickle.load(f)
+
+    markers = ['o', 'X', 's']
+    colors = ['#003f5c', '#ffa600', 'black']
+
+    for i, lr in enumerate(lrs):
+        for j, epochs in enumerate(num_epochs):
+            losses, times = results[dataset][lr, epochs]
+            plt.plot(times, losses, label=f'lr={lr}, epochs={epochs}', marker=markers[j], color=colors[i])
+
+    plt.legend()
+    plt.title(dataset.name)
+    plt.yscale('log')
+    plt.show()
+    plt.close()
+
+
 if __name__ == '__main__':
 
     synthetic_datasets = [SyntheticMNLDataset, SyntheticCDMDataset]
@@ -758,12 +780,14 @@ if __name__ == '__main__':
     ]
     general_datasets = [DistrictDataset, ExpediaDataset, SushiDataset]
 
-
     network_datasets = synthetic_datasets + real_network_datasets
     all_datasets = general_datasets + network_datasets
 
-    lcl_context_effect_tsne(real_network_datasets)
-    dlcl_context_effect_tsne(real_network_datasets)
+
+    plot_em_timing(ExpediaDataset)
+
+    # lcl_context_effect_tsne(real_network_datasets)
+    # dlcl_context_effect_tsne(real_network_datasets)
 
     # for dataset in all_datasets:
     #     plot_grid_search(dataset)
@@ -771,7 +795,7 @@ if __name__ == '__main__':
     # for dataset in general_datasets:
     #     plot_general_choice_dataset_accuracies(dataset)
 
-    visualize_context_effects_l1_reg(network_datasets, FeatureCDM)
+    # visualize_context_effects_l1_reg(network_datasets, FeatureCDM)
     # visualize_context_effects_l1_reg(network_datasets, FeatureContextMixture)
 
     # visualize_context_effects(network_datasets)
