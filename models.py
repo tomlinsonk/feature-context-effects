@@ -780,6 +780,9 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
                 loss.backward()
                 optimizer.step()
 
+            if time.time() > start_time + timeout_seconds:
+                break
+
         B = Q.B.clone().detach()
         C = Q.C.clone().detach()
 
