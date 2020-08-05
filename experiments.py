@@ -346,7 +346,7 @@ def validation_loss_grid_search(datasets, methods):
 
     results = dict()
 
-    pool = Pool(18)
+    pool = Pool(30)
 
     for args, loss in tqdm(pool.imap_unordered(validation_loss_grid_search_helper, params), total=len(params)):
         results[args] = loss
