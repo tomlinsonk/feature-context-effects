@@ -335,12 +335,12 @@ def validation_loss_grid_search_helper(args):
                                                                                      dataset.num_features,
                                                                                      lr=lr, weight_decay=wd,
                                                                                      compute_val_stats=True)
-    return args, train_losses, train_accs, val_losses, val_accs
+    return args, (train_losses, train_accs, val_losses, val_accs)
 
 
 def validation_loss_grid_search(datasets, methods):
     lrs = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
-    wds = [0, 0.0001, 0.0005, 0.001, 0.005, 0.01]
+    wds = [0, 0.0001, 0.001, 0.01]
 
     params = {(dataset, method, lr, wd) for dataset in datasets for lr in lrs for method in methods for wd in wds}
 
@@ -348,8 +348,8 @@ def validation_loss_grid_search(datasets, methods):
 
     pool = Pool(30)
 
-    for args, loss in tqdm(pool.imap_unordered(validation_loss_grid_search_helper, params), total=len(params)):
-        results[args] = loss
+    for args, losses in tqdm(pool.imap_unordered(validation_loss_grid_search_helper, params), total=len(params)):
+        results[args] = losses
 
     pool.close()
     pool.join()
