@@ -370,7 +370,7 @@ def validation_loss_grid_search(datasets, methods, update=False):
 
         old_results.update(results)
         results = old_results
-        datasets = sorted(set(old_datasets).union(datasets))
+        datasets = list(set(old_datasets).union(datasets))
         lrs = sorted(set(old_lrs).union(lrs))
         wds = sorted(set(old_wds).union(wds))
 
