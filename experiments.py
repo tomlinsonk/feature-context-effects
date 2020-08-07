@@ -13,7 +13,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
     RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
-    ExpediaDataset, SushiDataset, DistrictDataset
+    ExpediaDataset, SushiDataset, DistrictDataset, DistrictSmartDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
     FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em, \
     MNLMixture, train_mnl_mixture
@@ -305,7 +305,7 @@ def learning_rate_grid_search_helper(args):
     return args, train_losses[-1]
 
 
-def learning_rate_grid_search(datasets, methods):
+def learning_rate_grid_search(datasets, methods, update=False):
     lrs = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
     params = {(dataset, method, lr) for dataset in datasets for lr in lrs for method in methods}
 
@@ -320,6 +320,14 @@ def learning_rate_grid_search(datasets, methods):
     pool.join()
 
     filename = f'{CONFIG_DIR}/learning_rate_settings.pickle'
+
+    if update:
+        with open(filename, 'rb') as f:
+            old_results, old_lrs = pickle.load(f)
+
+        old_results.update(results)
+        results = old_results
+        lrs = sorted(set(old_lrs).union(lrs))
 
     with open(filename, 'wb') as f:
         pickle.dump((results, lrs), f)
@@ -338,7 +346,7 @@ def validation_loss_grid_search_helper(args):
     return args, (train_losses, train_accs, val_losses, val_accs)
 
 
-def validation_loss_grid_search(datasets, methods):
+def validation_loss_grid_search(datasets, methods, update=False):
     lrs = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
     wds = [0, 0.0001, 0.0005, 0.001, 0.005, 0.01]
 
@@ -356,8 +364,18 @@ def validation_loss_grid_search(datasets, methods):
 
     filename = f'{CONFIG_DIR}/validation_loss_lr_wd_settings.pickle'
 
+    if update:
+        with open(filename, 'rb') as f:
+            old_results, old_datasets, old_methods, old_lrs, old_wds = pickle.load(f)
+
+        old_results.update(results)
+        results = old_results
+        datasets = sorted(set(old_datasets).union(datasets))
+        lrs = sorted(set(old_lrs).union(lrs))
+        wds = sorted(set(old_wds).union(wds))
+
     with open(filename, 'wb') as f:
-        pickle.dump((results, lrs), f)
+        pickle.dump((results, datasets, methods, lrs, wds), f)
 
 
 def l1_regularization_grid_search_helper(args):
@@ -463,35 +481,28 @@ def time_all_em(datasets):
 
 if __name__ == '__main__':
 
-    datasets = [
-        MathOverflowDataset,
-        FacebookWallDataset, CollegeMsgDataset,
-        DistrictDataset, SushiDataset, ExpediaDataset,
-        SyntheticCDMDataset, SyntheticMNLDataset,
-        WikiTalkDataset, RedditHyperlinkDataset,
-        BitcoinAlphaDataset, BitcoinOTCDataset,
-        SMSADataset, SMSBDataset, SMSCDataset,
-        EmailEnronDataset, EmailEUDataset, EmailW3CDataset
-    ]
+    # datasets = [
+    #     MathOverflowDataset,
+    #     FacebookWallDataset, CollegeMsgDataset,
+    #     DistrictDataset, DistrictSmartDataset, SushiDataset, ExpediaDataset,
+    #     SyntheticCDMDataset, SyntheticMNLDataset,
+    #     WikiTalkDataset, RedditHyperlinkDataset,
+    #     BitcoinAlphaDataset, BitcoinOTCDataset,
+    #     SMSADataset, SMSBDataset, SMSCDataset,
+    #     EmailEnronDataset, EmailEUDataset, EmailW3CDataset
+    # ]
 
-    # model = run_feature_model_full_dataset(FeatureContextMixture, DistrictDataset, 0.01, 0)
+    datasets = [DistrictSmartDataset]
 
-    # time_em(DistrictDataset)
-
-    # time_all_em(datasets)
-
-    # run_feature_model_train_data(FeatureCDM, MathOverflowDataset, MathOverflowDataset.best_lr(FeatureCDM), 0.001)
-    #
     methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
 
-    validation_loss_grid_search(datasets, methods)
+    validation_loss_grid_search(datasets, methods, update=True)
+    learning_rate_grid_search(datasets, methods, update=True)
 
-    #
-    # learning_rate_grid_search(datasets, methods)
-    # l1_regularization_grid_search(datasets, FeatureCDM)
-    # l1_regularization_grid_search(datasets, FeatureContextMixture)
-    #
-    # all_experiments(datasets)
+    l1_regularization_grid_search(datasets, FeatureCDM)
+    l1_regularization_grid_search(datasets, FeatureContextMixture)
+
+    all_experiments(datasets)
 
 
 

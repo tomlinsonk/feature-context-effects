@@ -618,7 +618,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
                 total_val_loss += nn.functional.nll_loss(choice_pred, choices, reduction='sum').item()
                 val_count += 1
 
-            val_losses.append(val_loss / val_count)
+            val_losses.append(val_loss)
             val_accs.append(val_correct / val_count)
 
             # print(val_accs[-1])

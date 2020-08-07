@@ -1,3 +1,4 @@
+import matplotlib
 import os
 import pickle
 
@@ -163,6 +164,38 @@ def plot_grid_search(dataset):
     plt.yscale('log')
     plt.legend()
     plt.show()
+
+
+def plot_validation_grid_search(datasets):
+    methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
+    lrs = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
+    wds = [0, 0.0001, 0.0005, 0.001, 0.005, 0.01]
+
+    with open(f'{CONFIG_DIR}/validation_loss_lr_wd_settings.pickle', 'rb') as f:
+        results, datasets, methods, lrs, wds = pickle.load(f)
+
+    dataset = DistrictDataset
+
+    for method in methods:
+        fig, axes = plt.subplots(len(wds), len(lrs), sharey=True)
+
+        for row, lr in enumerate(lrs):
+            for col, wd in enumerate(wds):
+                train_losses, train_accs, val_losses, val_accs = results[dataset, method, lr, wd]
+
+                # axes[row, col].plot(range(len(val_accs)), val_losses, label='loss')
+                axes[row, col].plot(range(len(val_accs)), val_accs, label='acc')
+
+                if col == 0:
+                    axes[row, col].set_ylabel(f'lr={lr}', rotation=0, ha='right', fontsize=16)
+
+                if row == 0:
+                    axes[row, col].set_title(f'wd={wd}', fontsize=16)
+
+        plt.suptitle(method.name)
+        axes[0, 0].legend()
+        plt.show()
+
 
 
 def plot_dataset_stats():
@@ -548,12 +581,15 @@ def visualize_context_effects_l1_reg(datasets, method):
     fig = plt.figure(figsize=(len(reg_params), len(datasets)*1.1), constrained_layout=False)
     gs = fig.add_gridspec(len(datasets), len(reg_params), wspace=0, hspace=0.1)
 
-    for row, dataset in enumerate(datasets):
-        all_slopes = [results[dataset, reg_param, method][0].slopes.data.numpy() if method == FeatureContextMixture else results[dataset, reg_param, method][0].contexts.data.numpy() for reg_param in reg_params]
+    all_slopes = [results[dataset, reg_param, method][0].slopes.data.numpy() if method == FeatureContextMixture else
+                  results[dataset, reg_param, method][0].contexts.data.numpy() for reg_param in reg_params for dataset in datasets]
 
-        max_abs = np.max(np.abs(all_slopes))
-        vmin = -max_abs
-        vmax = max_abs
+    max_abs = np.max(np.abs(all_slopes))
+    vmin = -max_abs
+    vmax = max_abs
+
+    for row, dataset in enumerate(datasets):
+
 
         for col, reg_param in enumerate(reg_params):
             ax = fig.add_subplot(gs[row, col])
@@ -768,6 +804,116 @@ def plot_em_timing(dataset):
     plt.close()
 
 
+def plot_binned_mnl_example():
+    # _, _, _, _, mathoverflow_means, mathoverflow_stds = MathOverflowDataset.load_standardized()
+    # _, _, _, _, synthetic_mnl_means, synthetic_mnl_stds = SyntheticMNLDataset.load_standardized()
+
+    # Hard-coded to avoid loading whole datasets
+    means = [[4.9191475 , 4.656493  , 0.2162834 , 0.13189632, 0.13194366, 0.02068096],
+             [2.6338944e+00, 1.5371358e+00, 2.6449988e-02, 4.7664855e-02, 4.7703274e-02, 1.7460630e-03]]
+
+    stds = [[0.46722016, 0.8068568 , 0.35599306, 0.03198218, 0.03193424, 0.03406612],
+            [1.3703023 , 1.255706  , 0.1655428 , 0.0230962 , 0.01190723,0.01028514]]
+
+    with open(f'{RESULT_DIR}/{MathOverflowDataset.name}_binned_mnl_params.pickle', 'rb') as f:
+        mathoverflow_data = pickle.load(f)
+
+    with open(f'{RESULT_DIR}/{SyntheticMNLDataset.name}_binned_mnl_params.pickle', 'rb') as f:
+        synthetic_mnl_data = pickle.load(f)
+
+    fig, axes = plt.subplots(2, 2, figsize=(4.5, 3.5), sharey=True, sharex='col')
+
+    for row, data in enumerate([synthetic_mnl_data, mathoverflow_data]):
+        for col in range(2):
+            bins, mnl_utilities, bin_counts, bin_choice_set_log_lengths, bin_losses = data[col]
+
+            # De-normalize
+            bins *= stds[row][col]
+            bins += means[row][col]
+
+            nonempty = bin_counts > 0
+
+            with_const = sm.add_constant(bins[nonempty])
+            mod_wls = sm.WLS(mnl_utilities[nonempty, 1], with_const, weights=bin_counts[nonempty])
+            res_wls = mod_wls.fit()
+            wls_intercept, wls_slope = res_wls.params
+
+            xs = np.exp(bins)
+
+            # axes[row, col].scatter(xs, mnl_utilities[:, 1], alpha=0.1, s=bin_counts, marker='o', linewidths=0)
+            axes[row, col].scatter(xs, mnl_utilities[:, 1], alpha=1, s=bin_counts**0.5, marker='.', color='black')
+
+            axes[row, col].plot(xs, list(map(lambda x: wls_intercept + np.log(x) * wls_slope, xs)),
+                                label='WLS', color='red')
+
+            axes[row, col].text(0.95, 0.95, f'${wls_slope:.2f}\;\log \;x {"+" if wls_intercept > 0 else ""}{wls_intercept:.2f}$\n$r^2 = {res_wls.rsquared:.2f}$', ha='right', va='top', transform=axes[row, col].transAxes)
+
+            axes[row, col].set_xscale('log')
+
+    axes[0, 1].text(1.05, 0.5, 'synthetic-mnl', rotation=270, size=12, ha='left', va='center', transform=axes[0, 1].transAxes)
+    axes[1, 1].text(1.05, 0.5, 'mathoverflow', rotation=270, size=12, ha='left', va='center', transform=axes[1, 1].transAxes)
+
+    axes[1, 0].set_xlabel('Choice Set In-Degree')
+    axes[1, 1].set_xlabel('Choice Set Shared Nbrs.')
+
+    axes[0, 0].set_ylabel('Shared Nbrs. Util.')
+    axes[1, 0].set_ylabel('Shared Nbrs. Util.')
+
+    axes[1, 0].set_xticks([1, 10, 100, 1000])
+    axes[1, 0].set_xticklabels([1, 10, 100, ''])
+    axes[1, 1].set_xticks([1, 10, 100, 1000])
+    axes[1, 1].set_xticklabels([1, 10, 100, 1000])
+
+    plt.subplots_adjust(wspace=0, hspace=0)
+
+    plt.savefig('context-effect-example.pdf', bbox_inches='tight')
+
+
+def make_likelihood_table(all_datasets):
+    with open(f'{CONFIG_DIR}/learning_rate_settings.pickle', 'rb') as f:
+        data, lrs = pickle.load(f)
+
+    methods = [FeatureMNL, FeatureCDM, MNLMixture, FeatureContextMixture]
+
+    latex = r"""\begin{tabular}{lrrrr}
+\toprule
+& \textbf{MNL} & \textbf{LCL} & \textbf{Mixed logit} & \textbf{DLCL}\\
+\midrule"""
+
+    for dataset in all_datasets:
+        latex += f'\\textsc{{{dataset.name}}}'
+
+        best_nll_overall = min(int(data[dataset, method, lr]) for lr in lrs for method in methods)
+
+        for method in methods:
+            best_nll = min(int(data[dataset, method, lr]) for lr in lrs)
+            if best_nll == best_nll_overall:
+                latex += f' & \\textbf{{{best_nll}}}'
+            else:
+                latex += f' & {best_nll}'
+
+            if method in [FeatureCDM, FeatureContextMixture]:
+                sig_thresh = 0.001
+
+                baseline = MNLMixture if method == FeatureContextMixture else FeatureMNL
+                baseline_nll = min([data[dataset, baseline, lr] for lr in lrs])
+
+                if stats.chi2.sf(2 * (baseline_nll - best_nll), dataset.num_features ** 2) < sig_thresh:
+                    latex += '$^*$' if method == FeatureCDM else '$^{**}$'
+                else:
+                    latex += '\phantom{$^*$}' if method == FeatureCDM else '\phantom{$^{**}$}'
+
+
+
+
+
+        latex += '\\\\\n'
+
+    latex += '\\bottomrule\n\\end{tabular}'
+
+    print(latex)
+
+
 if __name__ == '__main__':
 
     synthetic_datasets = [SyntheticMNLDataset, SyntheticCDMDataset]
@@ -781,10 +927,20 @@ if __name__ == '__main__':
     general_datasets = [DistrictDataset, ExpediaDataset, SushiDataset]
 
     network_datasets = synthetic_datasets + real_network_datasets
-    all_datasets = general_datasets + network_datasets
+    all_datasets = network_datasets + general_datasets
 
+    make_likelihood_table(all_datasets)
 
-    plot_em_timing(ExpediaDataset)
+    # plot_validation_grid_search(all_datasets)
+
+    # for dataset in general_datasets:
+    #     print(dataset.name)
+    #     dataset.print_stats()
+    #     print()
+
+    # plot_binned_mnl_example()
+
+    # plot_em_timing(ExpediaDataset)
 
     # lcl_context_effect_tsne(real_network_datasets)
     # dlcl_context_effect_tsne(real_network_datasets)
@@ -795,7 +951,7 @@ if __name__ == '__main__':
     # for dataset in general_datasets:
     #     plot_general_choice_dataset_accuracies(dataset)
 
-    # visualize_context_effects_l1_reg(network_datasets, FeatureCDM)
+    visualize_context_effects_l1_reg(network_datasets, FeatureCDM)
     # visualize_context_effects_l1_reg(network_datasets, FeatureContextMixture)
 
     # visualize_context_effects(network_datasets)
@@ -803,7 +959,6 @@ if __name__ == '__main__':
     # plot_all_accuracies(network_datasets)
 
     # examine_choice_set_size_effects(datasets)
-    #
     #
     # for dataset in network_datasets:
     #     print(dataset.name)

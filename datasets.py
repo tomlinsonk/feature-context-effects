@@ -1182,6 +1182,12 @@ class DistrictDataset(Dataset):
             pickle.dump((nx.DiGraph(), train_data, val_data, test_data), f, protocol=4)
 
 
+class DistrictSmartDataset(DistrictDataset):
+    name = 'district-smart'
+    num_features = 6
+    feature_names = ['hull', 'bbox', 'reock', 'polsby', 'sym_x', 'sym_y']
+
+
 if __name__ == '__main__':
     # for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
     #                 BitcoinAlphaDataset, BitcoinOTCDataset,
@@ -1190,7 +1196,7 @@ if __name__ == '__main__':
     #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
     #     dataset.load_standardized()
 
-    DistrictDataset.print_stats()
+    DistrictSmartDataset.print_stats()
 
 
 
