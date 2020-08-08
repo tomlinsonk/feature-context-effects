@@ -272,9 +272,6 @@ class Dataset(ABC):
         loss_grid = np.array([[max(losses[cls, method, lr, wd][2][-5:]) for wd in wds] for lr in lrs])
         min_lr_idx, min_wd_idx = np.unravel_index(np.argmin(loss_grid), loss_grid.shape)
 
-        print(loss_grid.min())
-        print(loss_grid[min_lr_idx, min_wd_idx])
-
         return lrs[min_lr_idx], wds[min_wd_idx]
 
 
