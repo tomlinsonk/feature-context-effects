@@ -20,7 +20,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
     RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
-    ExpediaDataset, SushiDataset, DistrictDataset
+    ExpediaDataset, SushiDataset, DistrictDataset, DistrictSmartDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
     FeatureContextMixture, train_model, FeatureSelector, RandomSelector, MNLMixture
 
@@ -590,7 +590,6 @@ def visualize_context_effects_l1_reg(datasets, method):
 
     for row, dataset in enumerate(datasets):
 
-
         for col, reg_param in enumerate(reg_params):
             ax = fig.add_subplot(gs[row, col])
 
@@ -603,7 +602,7 @@ def visualize_context_effects_l1_reg(datasets, method):
                     ax.set_title(f'{reg_param}', fontsize=12)
 
             model, loss = results[dataset, reg_param, method]
-            ax.matshow(model.slopes.data.numpy() if method == FeatureContextMixture else model.contexts.data.numpy(), cmap=mpl.cm.bwr, vmin=vmin, vmax=vmax, interpolation='nearest')
+            ax.matshow(model.slopes.data.numpy() if method == FeatureContextMixture else model.contexts.data.numpy(), cmap=mpl.cm.seismic, vmin=vmin, vmax=vmax, interpolation='nearest')
             ax.set_xticks([])
             ax.set_yticks([])
 
@@ -903,15 +902,138 @@ def make_likelihood_table(all_datasets):
                 else:
                     latex += '\phantom{$^*$}' if method == FeatureCDM else '\phantom{$^{**}$}'
 
-
-
-
-
         latex += '\\\\\n'
 
     latex += '\\bottomrule\n\\end{tabular}'
 
     print(latex)
+
+
+def visualize_context_effects_l1_reg_general_choice_dataset(dataset, method):
+    with open(f'{RESULT_DIR}/l1_regularization_grid_search_{method.name}_results.pickle', 'rb') as f:
+        results, reg_params = pickle.load(f)
+
+    with open(f'{CONFIG_DIR}/learning_rate_settings.pickle', 'rb') as f:
+        grid_search_losses, lrs = pickle.load(f)
+
+    if method == FeatureCDM:
+        reg_params.remove(0.001)
+    elif method == FeatureContextMixture:
+        reg_params = reg_params[:-2]
+
+    fig = plt.figure(figsize=(len(reg_params), 1), constrained_layout=False)
+    gs = fig.add_gridspec(1, len(reg_params), wspace=0, hspace=0)
+
+    all_slopes = [results[dataset, reg_param, method][0].slopes.data.numpy() if method == FeatureContextMixture else
+                  results[dataset, reg_param, method][0].contexts.data.numpy() for reg_param in reg_params]
+
+    max_abs = np.max(np.abs(all_slopes))
+    vmin = -max_abs
+    vmax = max_abs
+
+    for col, reg_param in enumerate(reg_params):
+        ax = fig.add_subplot(gs[col])
+
+        if col == 0:
+            ax.set_ylabel(dataset.name, rotation='horizontal', ha='right', fontsize=14, va='center')
+            ax.set_title(f'$\\lambda=${reg_param}', fontsize=12)
+        else:
+            ax.set_title(f'{reg_param}', fontsize=12)
+
+        model, loss = results[dataset, reg_param, method]
+        print(reg_param)
+        for feat in range(dataset.num_features):
+            print('Effect exerted by', dataset.feature_names[feat], 'prop:', torch.softmax(model.weights, 0)[feat].item())
+            print(f'\tintercepts: {model.intercepts[:, feat].detach().numpy()}')
+            print(f'\tslopes: {model.slopes[:, feat].detach().numpy()}')
+
+
+        ax.matshow(model.slopes.data.numpy() if method == FeatureContextMixture else model.contexts.data.numpy(), cmap=mpl.cm.seismic, vmin=vmin, vmax=vmax, interpolation='nearest')
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    losses = [results[dataset, reg_param, method][1] for reg_param in reg_params]
+
+    baseline = MNLMixture if method == FeatureContextMixture else FeatureMNL
+    baseline_loss = min([grid_search_losses[dataset, baseline, lr] for lr in lrs])
+
+    p = 0.001
+    ddof = dataset.num_features**2
+    sig_thresh = baseline_loss - 0.5 * chi2.isf(p, ddof)
+
+    ymax_pcts = 2
+
+    if method == FeatureContextMixture:
+        if dataset == DistrictSmartDataset:
+            ymax_pcts = 4
+        elif dataset == ExpediaDataset:
+            ymax_pcts = 0.2
+    else:
+        if dataset == DistrictSmartDataset:
+            ymax_pcts = 4
+        elif dataset == ExpediaDataset:
+            ymax_pcts = 0.4
+
+    y_min = min(losses + [sig_thresh])
+    y_ticks = [y_min, y_min * (1 + ymax_pcts / 200), y_min * (1 + ymax_pcts / 100)]
+
+    loss_ax = fig.add_subplot(gs[:])
+    loss_ax.plot(range(len(reg_params)), losses, color='black', alpha=0.7)
+    loss_ax.set_xlim(-0.5, len(reg_params) - 0.5)
+
+    loss_ax.set_ylim(min(y_ticks) * (1 - ymax_pcts / 1000), max(y_ticks))
+
+    loss_ax.hlines(sig_thresh, -0.5, len(reg_params) - 0.5, linestyles='dotted', colors='green')
+
+    loss_ax.patch.set_visible(False)
+    loss_ax.set_xticks([])
+    loss_ax.set_yticks(y_ticks)
+    loss_ax.set_yticklabels(['', f'+{ymax_pcts/2:.2g}%', f'+{ymax_pcts:.2g}%'])
+
+    loss_ax.yaxis.tick_right()
+
+    plt.savefig(f'l1_regularization_{dataset.name}_{method.name}.pdf', bbox_inches='tight')
+
+
+def context_effects_from_data(dataset):
+    graph, train_data, val_data, test_data = dataset.load()
+    histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = [
+        torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(len(train_data))]
+
+    choice_set_features[:, :, 3] = torch.log(choice_set_features[:, :, 3] + 1)
+
+    mean_feat_values = torch.zeros(len(choices), dataset.num_features)
+    for sample in tqdm(range(len(choices))):
+        mean_feat_values[sample] = choice_set_features[sample, :choice_set_lengths[sample], :].mean(0)
+
+    num_bins = 50
+
+    for exert_feat in range(dataset.num_features):
+
+        min_exert = min(mean_feat_values[:, exert_feat]).item()
+        max_exert = max(mean_feat_values[:, exert_feat]).item()
+
+        for receive_feat in range(dataset.num_features):
+
+            receive_chosen = choice_set_features[torch.arange(len(choices)), choices, receive_feat]
+
+            bins = np.linspace(min_exert, max_exert, num=num_bins)
+            mask = torch.from_numpy(np.digitize(mean_feat_values[:, exert_feat], bins))
+
+            binned_mean_chosen = [receive_chosen[mask == i+1].mean().item() for i in range(num_bins)]
+
+            binned_mean_available = [mean_feat_values[mask == i+1, receive_feat].mean().item() for i in range(num_bins)]
+
+            xs = bins + ((max_exert - min_exert) / num_bins / 2)
+
+            print(len(binned_mean_chosen), len(xs))
+            plt.scatter(xs, binned_mean_chosen, label='chosen')
+            plt.scatter(xs, binned_mean_available, label='available')
+
+            plt.legend()
+            plt.xlabel(f'Mean {dataset.feature_names[exert_feat]}')
+            plt.ylabel(f'{dataset.feature_names[receive_feat]}')
+            plt.show()
 
 
 if __name__ == '__main__':
@@ -924,12 +1046,15 @@ if __name__ == '__main__':
         EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
         FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
     ]
-    general_datasets = [DistrictDataset, ExpediaDataset, SushiDataset]
+    general_datasets = [DistrictDataset, DistrictSmartDataset, ExpediaDataset, SushiDataset]
 
     network_datasets = synthetic_datasets + real_network_datasets
     all_datasets = network_datasets + general_datasets
 
-    make_likelihood_table(all_datasets)
+
+    context_effects_from_data(ExpediaDataset)
+
+    # make_likelihood_table(all_datasets)
 
     # plot_validation_grid_search(all_datasets)
 
@@ -951,7 +1076,9 @@ if __name__ == '__main__':
     # for dataset in general_datasets:
     #     plot_general_choice_dataset_accuracies(dataset)
 
-    visualize_context_effects_l1_reg(network_datasets, FeatureCDM)
+    # visualize_context_effects_l1_reg_general_choice_dataset(ExpediaDataset, FeatureContextMixture)
+
+    # visualize_context_effects_l1_reg(network_datasets, FeatureCDM)
     # visualize_context_effects_l1_reg(network_datasets, FeatureContextMixture)
 
     # visualize_context_effects(network_datasets)
@@ -963,5 +1090,3 @@ if __name__ == '__main__':
     # for dataset in network_datasets:
     #     print(dataset.name)
     #     plot_binned_mnl(dataset, f'{PARAM_DIR}/feature_context_mixture_{dataset.name}_params_{dataset.best_lr(FeatureContextMixture)}_0.001.pt')
-
-

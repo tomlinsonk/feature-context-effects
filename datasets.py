@@ -263,6 +263,20 @@ class Dataset(ABC):
 
         return lrs[np.argmin([grid_search_losses[cls, method, lr] for lr in lrs])]
 
+    @classmethod
+    def best_val_lr_wd(cls, method):
+        with open(f'{CONFIG_DIR}/validation_loss_lr_wd_settings.pickle', 'rb') as f:
+            losses, datasets, methods, lrs, wds = pickle.load(f)
+
+        # Pick lr, wd pair that has lowest max loss over the last 5 epochs
+        loss_grid = np.array([[max(losses[cls, method, lr, wd][2][-5:]) for wd in wds] for lr in lrs])
+        min_lr_idx, min_wd_idx = np.unravel_index(np.argmin(loss_grid), loss_grid.shape)
+
+        print(loss_grid.min())
+        print(loss_grid[min_lr_idx, min_wd_idx])
+
+        return lrs[min_lr_idx], wds[min_wd_idx]
+
 
 class WikispeediaDataset(Dataset):
 
@@ -1070,7 +1084,6 @@ class ExpediaDataset(Dataset):
 
             choice_sets_with_features[i, :choice_set_length] = features
             torch.isnan(choice_sets_with_features[i, :choice_set_length])
-
 
             choices[i] = torch.from_numpy(np.where(group['booking_bool'] == 1)[0])
 

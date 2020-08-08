@@ -425,9 +425,24 @@ def all_experiments_helper(dataset):
     train_context_mixture_em(dataset)
 
     for method in methods:
-        torch.random.manual_seed(0)
-        np.random.seed(0)
-        run_feature_model_train_data(method, dataset, dataset.best_lr(method), weight_decay)
+        train_data_training_helper((dataset, method))
+
+
+def train_data_training_helper(args):
+    dataset, method = args
+    torch.random.manual_seed(0)
+    np.random.seed(0)
+    lr, wd = dataset.best_val_lr_wd(method)
+    run_feature_model_train_data(method, dataset, lr, wd)
+
+
+def train_data_training(datasets, methods):
+    pool = Pool(30)
+    params = {(dataset, method) for dataset in datasets for method in methods}
+
+    pool.map(train_data_training_helper, params)
+    pool.close()
+    pool.join()
 
 
 def all_experiments(datasets):
@@ -481,29 +496,27 @@ def time_all_em(datasets):
 
 if __name__ == '__main__':
 
-    # datasets = [
-    #     MathOverflowDataset,
-    #     FacebookWallDataset, CollegeMsgDataset,
-    #     DistrictDataset, DistrictSmartDataset, SushiDataset, ExpediaDataset,
-    #     SyntheticCDMDataset, SyntheticMNLDataset,
-    #     WikiTalkDataset, RedditHyperlinkDataset,
-    #     BitcoinAlphaDataset, BitcoinOTCDataset,
-    #     SMSADataset, SMSBDataset, SMSCDataset,
-    #     EmailEnronDataset, EmailEUDataset, EmailW3CDataset
-    # ]
-
-    datasets = [DistrictSmartDataset]
+    datasets = [
+        MathOverflowDataset,
+        FacebookWallDataset, CollegeMsgDataset,
+        DistrictDataset, DistrictSmartDataset, SushiDataset, ExpediaDataset,
+        SyntheticCDMDataset, SyntheticMNLDataset,
+        WikiTalkDataset, RedditHyperlinkDataset,
+        BitcoinAlphaDataset, BitcoinOTCDataset,
+        SMSADataset, SMSBDataset, SMSCDataset,
+        EmailEnronDataset, EmailEUDataset, EmailW3CDataset
+    ]
 
     methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
 
-    validation_loss_grid_search(datasets, methods, update=True)
-    learning_rate_grid_search(datasets, methods, update=True)
+    train_data_training(datasets, methods)
 
-    l1_regularization_grid_search(datasets, FeatureCDM)
-    l1_regularization_grid_search(datasets, FeatureContextMixture)
-
-    all_experiments(datasets)
-
-
+    # validation_loss_grid_search(datasets, methods, update=True)
+    # learning_rate_grid_search(datasets, methods, update=True)
+    #
+    # l1_regularization_grid_search(datasets, FeatureCDM)
+    # l1_regularization_grid_search(datasets, FeatureContextMixture)
+    #
+    # all_experiments(datasets)
 
 
