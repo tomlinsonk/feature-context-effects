@@ -311,7 +311,7 @@ def learning_rate_grid_search(datasets, methods, update=False):
 
     results = dict()
 
-    pool = Pool(18)
+    pool = Pool(30)
 
     for args, loss in tqdm(pool.imap_unordered(learning_rate_grid_search_helper, params), total=len(params)):
         results[args] = loss
@@ -402,7 +402,7 @@ def l1_regularization_grid_search(datasets, method):
     params = [(dataset, reg_param, method) for dataset in datasets for reg_param in reg_params]
 
     results = dict()
-    pool = Pool(18)
+    pool = Pool(30)
 
     for args, model, loss in tqdm(pool.imap_unordered(l1_regularization_grid_search_helper, params), total=len(params)):
         results[args] = model, loss
