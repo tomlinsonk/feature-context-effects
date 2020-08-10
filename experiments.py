@@ -13,7 +13,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
     RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
-    ExpediaDataset, SushiDataset, DistrictDataset, DistrictSmartDataset, CarADataset, CarBDataset
+    ExpediaDataset, SushiDataset, DistrictDataset, DistrictSmartDataset, CarADataset, CarBDataset, CarAltDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
     FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em, \
     MNLMixture, train_mnl_mixture
@@ -509,8 +509,17 @@ if __name__ == '__main__':
     #     SMSADataset, SMSBDataset, SMSCDataset,
     #     EmailEnronDataset, EmailEUDataset, EmailW3CDataset
     # ]
+    # graph, train_data, val_data, test_data, means, stds = CarADataset.load_standardized()
+    # all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
+    #
+    # torch.random.manual_seed(0)
+    # np.random.seed(0)
+    # model, train_losses, train_accs, val_losses, val_accs = training_methods[FeatureMNL](all_data, val_data,
+    #                                                                                      CarADataset.num_features,
+    #                                                                                      lr=0.01, weight_decay=0.001,
+    #                                                                                      compute_val_stats=False)
 
-    datasets = [CarADataset, CarBDataset]
+    datasets = [CarAltDataset]
 
     methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
 

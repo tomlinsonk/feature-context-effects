@@ -20,7 +20,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
     RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
-    ExpediaDataset, SushiDataset, DistrictDataset, DistrictSmartDataset
+    ExpediaDataset, SushiDataset, DistrictDataset, DistrictSmartDataset, CarADataset, CarBDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
     FeatureContextMixture, train_model, FeatureSelector, RandomSelector, MNLMixture
 
@@ -495,18 +495,18 @@ def make_accuracy_table(datasets):
     print(r'&\textbf{MNL} & \textbf{LCL} & \textbf{Mixed logit} & \textbf{DLCL}\\')
     print(r'\midrule')
     for j, dataset in enumerate(datasets):
-        mnl = accs[0, j]
-        lcl = accs[1, j]
-        mixed_mnl = accs[2, j]
-        dlcl = accs[3, j]
+        mnl = mean_ranks[0, j]
+        lcl = mean_ranks[1, j]
+        mixed_mnl = mean_ranks[2, j]
+        dlcl = mean_ranks[3, j]
 
         print(f'\\textsc{{{dataset.name}}}', end='')
         for val in [mnl, lcl, mixed_mnl, dlcl]:
-            print(f' & {val:.3f}'.replace('0.', '.'), end='')
-            # if round(val, 3) == max(round(x, 3) for x in [mnl, lcl, mixed_mnl, dlcl]):
-            #     print(f' & \\textbf{{{val:.3f}}}'.replace('0.', '.'), end='')
-            # else:
-            #     print(f' & {val:.3f}'.replace('0.', '.'), end='')
+            # print(f' & {val:.3f}'.replace('0.', '.'), end='')
+            if round(val, 3) == min(round(x, 3) for x in [mnl, lcl, mixed_mnl, dlcl]):
+                print(f' & \\textbf{{{val:.3f}}}'.replace('0.', '.'), end='')
+            else:
+                print(f' & {val:.3f}'.replace('0.', '.'), end='')
         print('\\\\')
 
     print(r'\bottomrule')
@@ -1085,7 +1085,7 @@ if __name__ == '__main__':
         EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
         FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
     ]
-    general_datasets = [DistrictDataset, DistrictSmartDataset, ExpediaDataset, SushiDataset]
+    general_datasets = [DistrictDataset, DistrictSmartDataset, ExpediaDataset, SushiDataset, CarADataset, CarBDataset]
 
     network_datasets = synthetic_datasets + real_network_datasets
     all_datasets = network_datasets + general_datasets
@@ -1121,7 +1121,8 @@ if __name__ == '__main__':
 
     # visualize_context_effects(network_datasets)
     # compute_all_accuracies(all_datasets)
-    # make_accuracy_table(all_datasets)
+    make_accuracy_table(all_datasets)
+
     # plot_all_accuracies(all_datasets)
     # plot_general_choice_dataset_accuracies(ExpediaDataset)
     # plot_general_choice_dataset_accuracies(SushiDataset)

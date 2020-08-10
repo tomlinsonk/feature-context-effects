@@ -1213,6 +1213,8 @@ class CarADataset(Dataset):
 
         feature_dict = {item: [body_type-1, transmission-1, displacement, 2-non_hybrid] for item, body_type, transmission, displacement, non_hybrid in features}
 
+        comparisons = comparisons[np.logical_not(comparisons[:, 3])]
+
         samples = len(comparisons)
         max_choice_set_size = 2
 
@@ -1253,6 +1255,7 @@ class CarBDataset(Dataset):
 
         features = np.loadtxt(f'{DATA_DIR}/car/exp2-prefs/items2.csv', skiprows=1, delimiter=',')
         comparisons = np.loadtxt(f'{DATA_DIR}/car/exp2-prefs/prefs2.csv', skiprows=1, delimiter=',')
+        comparisons = comparisons[np.logical_not(comparisons[:, 3])]
 
         feature_dict = {item: [body_type == 1, body_type == 2, body_type == 3, transmission-1, displacement, 2-non_hybrid, 2-awd] for item, body_type, transmission, displacement, non_hybrid, awd in features}
 
@@ -1284,6 +1287,49 @@ class CarBDataset(Dataset):
             pickle.dump((nx.DiGraph(), train_data, val_data, test_data), f, protocol=4)
 
 
+class CarAltDataset(Dataset):
+    name = 'car-alt'
+    num_features = 21
+    features_names = ['Price / ln(income)', 'Range', 'Acceleration', 'Top speed', 'Pollution', 'Size', '"Big enough"',
+                      'Luggage space', 'Operating cost', 'Station availability', 'Sports utility vehicle', 'Sports car',
+                      'Station wagon', 'Truck', 'Van', 'Constant for EV', 'Commute < 5 x EV', 'College x EV',
+                      'Constant for CNG', 'Constant for methanol', 'College x methanol']
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        data = np.loadtxt(f'{DATA_DIR}/car-alt-data/xmat.txt').reshape((4654, 156))
+
+        samples = len(data)
+        max_choice_set_size = 6
+
+        choice_sets = torch.full((samples, max_choice_set_size), -1, dtype=torch.long)
+        choice_sets_with_features = torch.zeros((samples, max_choice_set_size, cls.num_features), dtype=torch.float)
+        choice_set_lengths = torch.full([samples], 6, dtype=torch.long)
+        choices = torch.zeros(samples, dtype=torch.long)
+
+        for i, row in enumerate(data):
+            for item in range(6):
+                features = torch.zeros(cls.num_features, dtype=torch.float)
+
+                for feature in range(cls.num_features):
+                    features[feature] = row[feature * 6 + item]
+
+                choice_sets_with_features[i, item] = features
+            choices[i] = list(row[132:138]).index(1)
+
+        train_data, val_data, test_data = cls.data_split(samples, torch.zeros_like(choices),
+                                                         torch.zeros_like(choices),
+                                                         choice_sets,
+                                                         choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=True)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((nx.DiGraph(), train_data, val_data, test_data), f, protocol=4)
+
+
 if __name__ == '__main__':
     # for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
     #                 BitcoinAlphaDataset, BitcoinOTCDataset,
@@ -1292,8 +1338,7 @@ if __name__ == '__main__':
     #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
     #     dataset.load_standardized()
 
-    CarADataset.print_stats()
-    CarBDataset.print_stats()
+    CarAltDataset.print_stats()
 
 
 

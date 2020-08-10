@@ -222,6 +222,7 @@ class FeatureMNL(nn.Module):
         utilities = (self.utilities * choice_set_features).sum(-1)
 
         utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
+
         return nn.functional.log_softmax(utilities, 1)
 
     def loss(self, y_pred, y):
@@ -567,8 +568,8 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
         for batch in train_data_loader:
             choices = batch[-1]
             model.train()
-            choice_pred = model(*batch[:-1])
 
+            choice_pred = model(*batch[:-1])
             loss = model.loss(choice_pred, choices)
 
             total_loss += nn.functional.nll_loss(choice_pred, choices, reduction='sum').item()
@@ -599,7 +600,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
         prev_total_loss = total_loss
         # print(model.contexts.detach().numpy())
 
-        # print(total_loss)
+        print(total_loss)
 
         if compute_val_stats:
             total_val_loss = 0
