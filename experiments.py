@@ -406,7 +406,7 @@ def l1_regularization_grid_search(datasets, method):
 
     pool = Pool(30)
 
-    for args, model, loss in tqdm(pool.imap_unordered(l1_regularization_grid_search_helper, params), total=len(params)):
+    for _ in tqdm(pool.imap_unordered(l1_regularization_grid_search_helper, params), total=len(params)):
         pass
 
     pool.close()
