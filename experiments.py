@@ -440,7 +440,9 @@ def train_data_training(datasets, methods):
     pool = Pool(30)
     params = {(dataset, method) for dataset in datasets for method in methods}
 
-    pool.map(train_data_training_helper, params)
+    for _ in tqdm(pool.imap_unordered(train_data_training_helper, params), total=len(params)):
+        pass
+
     pool.close()
     pool.join()
 
@@ -513,10 +515,9 @@ if __name__ == '__main__':
     methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
 
     validation_loss_grid_search(datasets, methods, update=True)
-    learning_rate_grid_search(datasets, methods, update=True)
-
     train_data_training(datasets, methods)
 
+    learning_rate_grid_search(datasets, methods, update=True)
     l1_regularization_grid_search(datasets, FeatureCDM)
     l1_regularization_grid_search(datasets, FeatureContextMixture)
 
