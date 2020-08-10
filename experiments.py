@@ -13,7 +13,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
     RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
-    ExpediaDataset, SushiDataset, DistrictDataset, DistrictSmartDataset
+    ExpediaDataset, SushiDataset, DistrictDataset, DistrictSmartDataset, CarADataset, CarBDataset
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
     FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em, \
     MNLMixture, train_mnl_mixture
@@ -495,28 +495,31 @@ def time_all_em(datasets):
 
 
 if __name__ == '__main__':
+    # datasets = [
+    #     MathOverflowDataset,
+    #     FacebookWallDataset, CollegeMsgDataset,
+    #     DistrictDataset, DistrictSmartDataset,
+    #     SushiDataset, ExpediaDataset,
+    #     CarADataset, CarBDataset,
+    #     SyntheticCDMDataset, SyntheticMNLDataset,
+    #     WikiTalkDataset, RedditHyperlinkDataset,
+    #     BitcoinAlphaDataset, BitcoinOTCDataset,
+    #     SMSADataset, SMSBDataset, SMSCDataset,
+    #     EmailEnronDataset, EmailEUDataset, EmailW3CDataset
+    # ]
 
-    datasets = [
-        MathOverflowDataset,
-        FacebookWallDataset, CollegeMsgDataset,
-        DistrictDataset, DistrictSmartDataset, SushiDataset, ExpediaDataset,
-        SyntheticCDMDataset, SyntheticMNLDataset,
-        WikiTalkDataset, RedditHyperlinkDataset,
-        BitcoinAlphaDataset, BitcoinOTCDataset,
-        SMSADataset, SMSBDataset, SMSCDataset,
-        EmailEnronDataset, EmailEUDataset, EmailW3CDataset
-    ]
+    datasets = [CarADataset, CarBDataset]
 
     methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
 
+    validation_loss_grid_search(datasets, methods, update=True)
+    learning_rate_grid_search(datasets, methods, update=True)
+
     train_data_training(datasets, methods)
 
-    # validation_loss_grid_search(datasets, methods, update=True)
-    # learning_rate_grid_search(datasets, methods, update=True)
-    #
-    # l1_regularization_grid_search(datasets, FeatureCDM)
-    # l1_regularization_grid_search(datasets, FeatureContextMixture)
-    #
+    l1_regularization_grid_search(datasets, FeatureCDM)
+    l1_regularization_grid_search(datasets, FeatureContextMixture)
+
     # all_experiments(datasets)
 
 

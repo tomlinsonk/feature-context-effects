@@ -375,8 +375,7 @@ def examine_choice_set_size_effects(datasets):
 
 
 def compute_all_accuracies(datasets):
-    methods = [FeatureMNL, FeatureCDM, MNLMixture, FeatureContextMixture, FeatureContextMixture, FeatureSelector, FeatureSelector, FeatureSelector,
-                 FeatureSelector, FeatureSelector, FeatureSelector, RandomSelector]
+    methods = [FeatureMNL, FeatureCDM, MNLMixture, FeatureContextMixture]
 
     losses = [list() for _ in range(len(methods))]
     accs = [list() for _ in range(len(methods))]
@@ -391,16 +390,23 @@ def compute_all_accuracies(datasets):
 
         histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
 
-        for j, method in enumerate(methods):
-            param_fname = f'{PARAM_DIR}/{method.name}_{dataset.name}_params_{dataset.best_lr(method)}_0.001.pt' if j < 4 else f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt'
+        non_singleton_set = choice_set_lengths > 1
+        choice_sets = choice_sets[non_singleton_set]
+        choice_sets_with_features = choice_sets_with_features[non_singleton_set]
+        choice_set_lengths = choice_set_lengths[non_singleton_set]
+        choices = choices[non_singleton_set]
 
-            model_param = dataset.num_features if j < 5 else j - 5
+        for j, method in enumerate(methods):
+            lr, wd = dataset.best_val_lr_wd(method)
+            param_fname = f'{PARAM_DIR}/{method.name}_{dataset.name}_train_params_{lr}_{wd}.pt'
+
+            model_param = dataset.num_features
             model = load_feature_model(method, model_param, param_fname)
 
             pred = model(choice_sets_with_features, choice_set_lengths)
             train_loss = model.loss(pred, choices)
 
-            ranks = stats.rankdata(-pred.detach().numpy(), method='average', axis=1)[np.arange(len(choices)), choices]
+            ranks = stats.rankdata(-pred.detach().numpy(), method='average', axis=1)[np.arange(len(choices)), choices] - 1
             vals, idxs = pred.max(1)
 
             correct_preds = (idxs == choices)
@@ -408,7 +414,7 @@ def compute_all_accuracies(datasets):
 
             losses[j].append(train_loss.item())
             accs[j].append(acc)
-            mean_ranks[j].append(np.mean(ranks / np.array(choice_set_lengths)))
+            mean_ranks[j].append(np.mean(ranks / (np.array(choice_set_lengths) - 1)))
             all_correct_preds[j].append(correct_preds.numpy())
             all_ranks[j].append(ranks)
 
@@ -418,7 +424,7 @@ def compute_all_accuracies(datasets):
 
 def plot_general_choice_dataset_accuracies(dataset):
 
-    methods = [FeatureMNL, FeatureCDM, MNLMixture, FeatureContextMixture, FeatureContextMixture] + ([FeatureSelector] * dataset.num_features) + [RandomSelector]
+    methods = [FeatureMNL, FeatureCDM, MNLMixture, FeatureContextMixture]
 
     losses = []
     accs = []
@@ -430,18 +436,23 @@ def plot_general_choice_dataset_accuracies(dataset):
 
     histories, history_lengths, choice_sets, choice_sets_with_features, choice_set_lengths, choices = test_data
 
-    for j, method in enumerate(methods):
-        param_fname = f'{PARAM_DIR}/{method.name}_{dataset.name}_params_{dataset.best_lr(method)}_0.001.pt' if j < 4 else f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt'
+    non_singleton_set = choice_set_lengths > 1
+    choice_sets = choice_sets[non_singleton_set]
+    choice_sets_with_features = choice_sets_with_features[non_singleton_set]
+    choice_set_lengths = choice_set_lengths[non_singleton_set]
+    choices = choices[non_singleton_set]
 
-        model_param = dataset.num_features if j < 5 else j - 5
+    for j, method in enumerate(methods):
+        lr, wd = dataset.best_val_lr_wd(method)
+        param_fname = f'{PARAM_DIR}/{method.name}_{dataset.name}_train_params_{lr}_{wd}.pt'
+
+        model_param = dataset.num_features
         model = load_feature_model(method, model_param, param_fname)
 
-        flip_feats = (dataset == ExpediaDataset and j == 8) or (dataset == SushiDataset and j in (5, 7))
-
-        pred = model(choice_sets_with_features * (-1 if flip_feats else 1), choice_set_lengths)
+        pred = model(choice_sets_with_features, choice_set_lengths)
         train_loss = model.loss(pred, choices)
 
-        ranks = stats.rankdata(-pred.detach().numpy(), method='average', axis=1)[np.arange(len(choices)), choices]
+        ranks = stats.rankdata(-pred.detach().numpy(), method='average', axis=1)[np.arange(len(choices)), choices] - 1
         vals, idxs = pred.max(1)
 
         correct_preds = (idxs == choices)
@@ -449,13 +460,13 @@ def plot_general_choice_dataset_accuracies(dataset):
 
         losses.append(train_loss.item())
         accs.append(acc)
-        mean_ranks.append(np.mean(ranks / np.array(choice_set_lengths)))
+        mean_ranks.append(np.mean(ranks / (np.array(choice_set_lengths) - 1)))
         all_correct_preds.append(correct_preds.numpy())
         all_ranks.append(ranks)
 
-    method_names = ['Feature MNL', 'Feature CDM', 'Mixed MNL', 'Context Mixture', 'Context Mixture EM'] + dataset.feature_names + ['Random']
+    method_names = ['Feature MNL', 'Feature CDM', 'Mixed MNL', 'Context Mixture']
 
-    fig, axes = plt.subplots(3, 1, figsize=(14, 11))
+    fig, axes = plt.subplots(3, 1, figsize=(6, 11))
 
     axes[0].bar(range(len(method_names)), losses)
     axes[0].set_xticks(range(len(method_names)))
@@ -468,7 +479,7 @@ def plot_general_choice_dataset_accuracies(dataset):
     axes[1].set_xticklabels(method_names)
     axes[1].set_ylabel('Accuracy')
 
-    axes[2].bar(range(len(method_names)), mean_ranks)
+    axes[2].bar(range(len(method_names)), 1 - np.array(mean_ranks))
     axes[2].set_xticks(range(len(method_names)))
     axes[2].set_xticklabels(method_names)
     axes[2].set_ylabel('Mean Correct Position')
@@ -476,17 +487,42 @@ def plot_general_choice_dataset_accuracies(dataset):
     plt.savefig(f'{PLOT_DIR}/{dataset.name}_test_results.pdf', bbox_inches='tight')
 
 
+def make_accuracy_table(datasets):
+    with open(f'{RESULT_DIR}/all_prediction_results.pickle', 'rb') as f:
+        losses, accs, mean_ranks, _, all_ranks = pickle.load(f)
+
+    print(r'\toprule')
+    print(r'&\textbf{MNL} & \textbf{LCL} & \textbf{Mixed logit} & \textbf{DLCL}\\')
+    print(r'\midrule')
+    for j, dataset in enumerate(datasets):
+        mnl = accs[0, j]
+        lcl = accs[1, j]
+        mixed_mnl = accs[2, j]
+        dlcl = accs[3, j]
+
+        print(f'\\textsc{{{dataset.name}}}', end='')
+        for val in [mnl, lcl, mixed_mnl, dlcl]:
+            print(f' & {val:.3f}'.replace('0.', '.'), end='')
+            # if round(val, 3) == max(round(x, 3) for x in [mnl, lcl, mixed_mnl, dlcl]):
+            #     print(f' & \\textbf{{{val:.3f}}}'.replace('0.', '.'), end='')
+            # else:
+            #     print(f' & {val:.3f}'.replace('0.', '.'), end='')
+        print('\\\\')
+
+    print(r'\bottomrule')
+
+
 def plot_all_accuracies(datasets):
     with open(f'{RESULT_DIR}/all_prediction_results.pickle', 'rb') as f:
-        losses, accs, mean_ranks, _, _ = pickle.load(f)
+        losses, accs, mean_ranks, _, all_ranks = pickle.load(f)
 
     fig, axes = plt.subplots(3, 1, figsize=(14, 11))
 
 
-    bar_width = 0.167
-    width_multiplier = 2
-    xs = [np.arange(len(datasets)) + (i * bar_width) for i in range(-2, 3)]
-    method_names = ['Feature MNL', 'Feature CDM', 'Mixed MNL', 'Context Mixture', 'Context Mixture EM']
+    bar_width = 0.2
+    width_multiplier = 1.5
+    xs = [np.arange(len(datasets)) + ((i - 0.5) * bar_width) for i in range(-1, 3)]
+    method_names = ['Feature MNL', 'Feature CDM', 'Mixed MNL', 'Context Mixture']
 
     # With baselines
     # bar_width = 0.07
@@ -513,7 +549,7 @@ def plot_all_accuracies(datasets):
     for i in range(len(method_names)):
         axes[0].bar(xs[i], losses[i], edgecolor='white', label=method_names[i], width=bar_width)
         axes[1].bar(xs[i], accs[i], edgecolor='white', label=method_names[i], width=bar_width)
-        axes[2].bar(xs[i], mean_ranks[i], edgecolor='white', label=method_names[i], width=bar_width)
+        axes[2].bar(xs[i], 1 - mean_ranks[i], edgecolor='white', label=method_names[i], width=bar_width)
 
     for i in range(3):
         axes[i].set_xticks(np.arange(len(datasets)))
@@ -522,10 +558,13 @@ def plot_all_accuracies(datasets):
     axes[0].set_ylabel('Mean Test NLL')
     axes[1].set_ylabel('Test Accuracy')
     axes[2].set_ylabel('Test Mean Correct Position')
-
+    axes[2].set_ylim(0, 1)
     axes[1].legend(bbox_to_anchor=(1.01, 0.5), loc='center left')
 
     plt.savefig(f'{PLOT_DIR}/test_performance.pdf', bbox_inches='tight')
+
+
+
 
 
 def visualize_context_effects(datasets):
@@ -1051,10 +1090,9 @@ if __name__ == '__main__':
     network_datasets = synthetic_datasets + real_network_datasets
     all_datasets = network_datasets + general_datasets
 
+    # context_effects_from_data(ExpediaDataset)
 
-    context_effects_from_data(ExpediaDataset)
-
-    # make_likelihood_table(all_datasets)
+    make_likelihood_table(all_datasets)
 
     # plot_validation_grid_search(all_datasets)
 
@@ -1082,8 +1120,13 @@ if __name__ == '__main__':
     # visualize_context_effects_l1_reg(network_datasets, FeatureContextMixture)
 
     # visualize_context_effects(network_datasets)
-    # compute_all_accuracies(network_datasets)
-    # plot_all_accuracies(network_datasets)
+    # compute_all_accuracies(all_datasets)
+    # make_accuracy_table(all_datasets)
+    # plot_all_accuracies(all_datasets)
+    # plot_general_choice_dataset_accuracies(ExpediaDataset)
+    # plot_general_choice_dataset_accuracies(SushiDataset)
+    # plot_general_choice_dataset_accuracies(DistrictDataset)
+    # plot_general_choice_dataset_accuracies(DistrictSmartDataset)
 
     # examine_choice_set_size_effects(datasets)
     #

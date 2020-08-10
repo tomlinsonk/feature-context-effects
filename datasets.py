@@ -1198,6 +1198,92 @@ class DistrictSmartDataset(DistrictDataset):
     feature_names = ['hull', 'bbox', 'reock', 'polsby', 'sym_x', 'sym_y']
 
 
+class CarADataset(Dataset):
+    name = 'car-a'
+    num_features = 4
+    features_names = ['SUV', 'Automatic', 'Engine Displacement', 'Hybrid']
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        features = np.loadtxt(f'{DATA_DIR}/car/exp1-prefs/items1.csv', skiprows=1, delimiter=',')
+        comparisons = np.loadtxt(f'{DATA_DIR}/car/exp1-prefs/prefs1.csv', skiprows=1, delimiter=',')
+
+        feature_dict = {item: [body_type-1, transmission-1, displacement, 2-non_hybrid] for item, body_type, transmission, displacement, non_hybrid in features}
+
+        samples = len(comparisons)
+        max_choice_set_size = 2
+
+        choice_sets = torch.full((samples, max_choice_set_size), -1, dtype=torch.long)
+        choice_sets_with_features = torch.zeros((samples, max_choice_set_size, cls.num_features), dtype=torch.float)
+        choice_set_lengths = torch.zeros(samples, dtype=torch.long)
+        choices = torch.zeros(samples, dtype=torch.long)
+
+        for index, row in enumerate(comparisons):
+            user, chosen_car, other_car, is_control = row
+
+            if not is_control:
+                choice_set = [chosen_car-1, other_car-1]
+                choice_sets[index] = torch.as_tensor(choice_set)
+                choices[index] = 0
+                choice_set_lengths[index] = 2
+                choice_sets_with_features[index] = torch.as_tensor([feature_dict[chosen_car], feature_dict[other_car]])
+
+        train_data, val_data, test_data = cls.data_split(samples, torch.zeros_like(choices),
+                                                         torch.zeros_like(choices),
+                                                         choice_sets,
+                                                         choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=True)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((nx.DiGraph(), train_data, val_data, test_data), f, protocol=4)
+
+
+class CarBDataset(Dataset):
+    name = 'car-b'
+    num_features = 7
+    features_names = ['Sedan', 'SUV', 'Hatchback', 'Automatic', 'Engine Displacement', 'Hybrid', 'All-wheel-drive']
+
+    @classmethod
+    def load_into_pickle(cls, file_name):
+        random.seed(0)
+        np.random.seed(0)
+
+        features = np.loadtxt(f'{DATA_DIR}/car/exp2-prefs/items2.csv', skiprows=1, delimiter=',')
+        comparisons = np.loadtxt(f'{DATA_DIR}/car/exp2-prefs/prefs2.csv', skiprows=1, delimiter=',')
+
+        feature_dict = {item: [body_type == 1, body_type == 2, body_type == 3, transmission-1, displacement, 2-non_hybrid, 2-awd] for item, body_type, transmission, displacement, non_hybrid, awd in features}
+
+        samples = len(comparisons)
+        max_choice_set_size = 2
+
+        choice_sets = torch.full((samples, max_choice_set_size), -1, dtype=torch.long)
+        choice_sets_with_features = torch.zeros((samples, max_choice_set_size, cls.num_features), dtype=torch.float)
+        choice_set_lengths = torch.zeros(samples, dtype=torch.long)
+        choices = torch.zeros(samples, dtype=torch.long)
+
+        for index, row in enumerate(comparisons):
+            user, chosen_car, other_car, is_control = row
+
+            if not is_control:
+                choice_set = [chosen_car-1, other_car-1]
+                choice_sets[index] = torch.as_tensor(choice_set)
+                choices[index] = 0
+                choice_set_lengths[index] = 2
+                choice_sets_with_features[index] = torch.as_tensor([feature_dict[chosen_car], feature_dict[other_car]])
+
+        train_data, val_data, test_data = cls.data_split(samples, torch.zeros_like(choices),
+                                                         torch.zeros_like(choices),
+                                                         choice_sets,
+                                                         choice_sets_with_features,
+                                                         choice_set_lengths, choices, shuffle=True)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump((nx.DiGraph(), train_data, val_data, test_data), f, protocol=4)
+
+
 if __name__ == '__main__':
     # for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
     #                 BitcoinAlphaDataset, BitcoinOTCDataset,
@@ -1206,7 +1292,8 @@ if __name__ == '__main__':
     #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
     #     dataset.load_standardized()
 
-    DistrictSmartDataset.print_stats()
+    CarADataset.print_stats()
+    CarBDataset.print_stats()
 
 
 
