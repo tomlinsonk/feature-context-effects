@@ -1290,7 +1290,7 @@ class CarBDataset(Dataset):
 class CarAltDataset(Dataset):
     name = 'car-alt'
     num_features = 21
-    features_names = ['Price / ln(income)', 'Range', 'Acceleration', 'Top speed', 'Pollution', 'Size', '"Big enough"',
+    feature_names = ['Price / ln(income)', 'Range', 'Acceleration', 'Top speed', 'Pollution', 'Size', '"Big enough"',
                       'Luggage space', 'Operating cost', 'Station availability', 'Sports utility vehicle', 'Sports car',
                       'Station wagon', 'Truck', 'Van', 'Constant for EV', 'Commute < 5 x EV', 'College x EV',
                       'Constant for CNG', 'Constant for methanol', 'College x methanol']

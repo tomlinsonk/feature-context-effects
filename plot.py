@@ -20,7 +20,7 @@ from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastF
     EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
     EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
     RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
-    ExpediaDataset, SushiDataset, DistrictDataset, DistrictSmartDataset, CarADataset, CarBDataset
+    ExpediaDataset, SushiDataset, DistrictDataset, DistrictSmartDataset, CarADataset, CarBDataset, CarAltDataset
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
     FeatureContextMixture, train_model, FeatureSelector, RandomSelector, MNLMixture
 
@@ -600,7 +600,6 @@ def visualize_context_effects(datasets):
 
     plt.colorbar(vis, ax=axes[:, :])
 
-
     plt.savefig('learned_lcl_contexts.pdf', bbox_inches='tight')
     plt.close()
 
@@ -981,11 +980,10 @@ def visualize_context_effects_l1_reg_general_choice_dataset(dataset, method):
 
         model, loss = results[dataset, reg_param, method]
         print(reg_param)
-        for feat in range(dataset.num_features):
-            print('Effect exerted by', dataset.feature_names[feat], 'prop:', torch.softmax(model.weights, 0)[feat].item())
-            print(f'\tintercepts: {model.intercepts[:, feat].detach().numpy()}')
-            print(f'\tslopes: {model.slopes[:, feat].detach().numpy()}')
-
+        # for feat in range(dataset.num_features):
+        #     print('Effect exerted by', dataset.feature_names[feat], 'prop:', torch.softmax(model.weights, 0)[feat].item())
+        #     print(f'\tintercepts: {model.intercepts[:, feat].detach().numpy()}')
+        #     print(f'\tslopes: {model.slopes[:, feat].detach().numpy()}')
 
         ax.matshow(model.slopes.data.numpy() if method == FeatureContextMixture else model.contexts.data.numpy(), cmap=mpl.cm.seismic, vmin=vmin, vmax=vmax, interpolation='nearest')
         ax.set_xticks([])
@@ -1012,6 +1010,8 @@ def visualize_context_effects_l1_reg_general_choice_dataset(dataset, method):
             ymax_pcts = 4
         elif dataset == ExpediaDataset:
             ymax_pcts = 0.4
+        elif dataset == CarAltDataset:
+            ymax_pcts = 12
 
     y_min = min(losses + [sig_thresh])
     y_ticks = [y_min, y_min * (1 + ymax_pcts / 200), y_min * (1 + ymax_pcts / 100)]
@@ -1075,6 +1075,19 @@ def context_effects_from_data(dataset):
             plt.show()
 
 
+def find_biggest_context_effects(dataset, num=5):
+    model = load_feature_model(FeatureCDM, dataset.num_features,
+                               f'{PARAM_DIR}/feature_cdm_{dataset.name}_params_{dataset.best_lr(FeatureCDM)}_0.001.pt')
+
+    contexts = model.contexts.data.numpy()
+
+    max_abs_idx = np.dstack(np.unravel_index(np.argsort(-abs(contexts).ravel()), contexts.shape))[0]
+
+    for row, col in max_abs_idx:
+        print(f'{contexts[row, col]} from: {dataset.feature_names[col]} on: {dataset.feature_names[row]}')
+
+
+
 if __name__ == '__main__':
 
     synthetic_datasets = [SyntheticMNLDataset, SyntheticCDMDataset]
@@ -1085,14 +1098,17 @@ if __name__ == '__main__':
         EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
         FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
     ]
-    general_datasets = [DistrictDataset, DistrictSmartDataset, ExpediaDataset, SushiDataset, CarADataset, CarBDataset]
+    general_datasets = [DistrictDataset, DistrictSmartDataset, ExpediaDataset, SushiDataset, CarADataset, CarBDataset, CarAltDataset]
 
     network_datasets = synthetic_datasets + real_network_datasets
     all_datasets = network_datasets + general_datasets
 
+
+    # find_biggest_context_effects(CarAltDataset)
+
     # context_effects_from_data(ExpediaDataset)
 
-    make_likelihood_table(all_datasets)
+    # make_likelihood_table(all_datasets)
 
     # plot_validation_grid_search(all_datasets)
 
@@ -1114,14 +1130,14 @@ if __name__ == '__main__':
     # for dataset in general_datasets:
     #     plot_general_choice_dataset_accuracies(dataset)
 
-    # visualize_context_effects_l1_reg_general_choice_dataset(ExpediaDataset, FeatureContextMixture)
+    # visualize_context_effects_l1_reg_general_choice_dataset(CarAltDataset, FeatureCDM)
 
     # visualize_context_effects_l1_reg(network_datasets, FeatureCDM)
     # visualize_context_effects_l1_reg(network_datasets, FeatureContextMixture)
 
     # visualize_context_effects(network_datasets)
     # compute_all_accuracies(all_datasets)
-    make_accuracy_table(all_datasets)
+    # make_accuracy_table(all_datasets)
 
     # plot_all_accuracies(all_datasets)
     # plot_general_choice_dataset_accuracies(ExpediaDataset)
