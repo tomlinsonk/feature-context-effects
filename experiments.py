@@ -392,7 +392,10 @@ def l1_regularization_grid_search_helper(args):
         compute_val_stats=False,
         l1_reg=reg_param)
 
-    return args, model, train_losses[-1]
+    filename = f'l1_reg_{method.name}_{dataset}_{reg_param}.pickle'
+
+    with open(filename, 'wb') as f:
+        pickle.dump((model, train_losses), f)
 
 
 def l1_regularization_grid_search(datasets, method):
@@ -401,19 +404,14 @@ def l1_regularization_grid_search(datasets, method):
 
     params = [(dataset, reg_param, method) for dataset in datasets for reg_param in reg_params]
 
-    results = dict()
     pool = Pool(30)
 
     for args, model, loss in tqdm(pool.imap_unordered(l1_regularization_grid_search_helper, params), total=len(params)):
-        results[args] = model, loss
+        pass
 
     pool.close()
     pool.join()
 
-    filename = f'l1_regularization_grid_search_{method.name}_results.pickle'
-
-    with open(filename, 'wb') as f:
-        pickle.dump((results, reg_params), f)
 
 
 def all_experiments_helper(dataset):
