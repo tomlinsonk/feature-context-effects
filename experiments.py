@@ -414,10 +414,10 @@ def l1_regularization_grid_search(datasets, method):
 
 
 def all_experiments_helper(dataset):
-    weight_decay = 0.001
-
-    learn_binned_mnl(dataset)
-    run_likelihood_ratio_test(dataset, weight_decay, methods)
+    # weight_decay = 0.001
+    #
+    # learn_binned_mnl(dataset)
+    # run_likelihood_ratio_test(dataset, weight_decay, methods)
 
     train_context_mixture_em(dataset)
 
@@ -504,15 +504,15 @@ if __name__ == '__main__':
     #     EmailEnronDataset, EmailEUDataset, EmailW3CDataset
     # ]
 
-    datasets = [SushiDataset]
+    datasets = [CarADataset, CarBDataset, CarAltDataset]
     methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
-
-    validation_loss_grid_search(datasets, methods, update=True)
-    train_data_training(datasets, methods)
-
-    learning_rate_grid_search(datasets, methods, update=True)
-    l1_regularization_grid_search(datasets, FeatureCDM)
-    l1_regularization_grid_search(datasets, FeatureContextMixture)
+    #
+    # validation_loss_grid_search(datasets, methods, update=True)
+    # train_data_training(datasets, methods)
+    #
+    # learning_rate_grid_search(datasets, methods, update=True)
+    # l1_regularization_grid_search(datasets, FeatureCDM)
+    # l1_regularization_grid_search(datasets, FeatureContextMixture)
 
     all_experiments(datasets)
 

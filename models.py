@@ -762,7 +762,7 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
     prev_nll = nll
     nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
 
-    print('START NLL:', nll)
+    # print('START NLL:', nll)
 
     while nll * 1.0000001 < prev_nll or nll == np.inf or timeout_seconds is not None:
 
@@ -785,7 +785,6 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
         prev_loss = np.inf
         total_loss = np.inf
 
-        print('START')
         for epoch in range(epochs):
             prev_loss = total_loss
             total_loss = 0
@@ -816,7 +815,7 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
         prev_nll = nll
         nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
 
-        print(nll)
+        # print(nll)
 
         losses.append(nll)
         iter_times.append(time.time() - start_time)

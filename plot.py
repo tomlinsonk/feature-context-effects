@@ -1149,7 +1149,7 @@ if __name__ == '__main__':
 
     # context_effects_from_data(ExpediaDataset)
 
-    # make_likelihood_table(all_datasets)
+    make_likelihood_table(all_datasets)
 
     # plot_validation_grid_search(all_datasets)
 
@@ -1171,14 +1171,14 @@ if __name__ == '__main__':
     # for dataset in general_datasets:
     #     plot_general_choice_dataset_accuracies(dataset)
 
-    visualize_context_effects_l1_reg_general_choice_dataset(SushiDataset, FeatureCDM)
+    # visualize_context_effects_l1_reg_general_choice_dataset(SushiDataset, FeatureCDM)
 
     # visualize_context_effects_l1_reg(network_datasets, FeatureCDM)
     # visualize_context_effects_l1_reg(network_datasets, FeatureContextMixture)
 
     # visualize_context_effects(network_datasets)
-    # compute_all_accuracies(all_datasets)
-    # make_accuracy_table(all_datasets)
+    compute_all_accuracies(all_datasets)
+    make_accuracy_table(all_datasets)
 
     # plot_all_accuracies(all_datasets)
     # plot_general_choice_dataset_accuracies(ExpediaDataset)
