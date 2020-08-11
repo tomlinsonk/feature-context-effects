@@ -1105,7 +1105,7 @@ class SushiDataset(Dataset):
         random.seed(0)
         np.random.seed(0)
 
-        ratings = np.loadtxt(f'{DATA_DIR}/sushi3-2016/sushi3b.5000.10.score')
+        rankings = np.loadtxt(f'{DATA_DIR}/sushi3-2016/sushi3b.5000.10.order', skiprows=1, usecols=range(2, 12), dtype=int)
         features = np.loadtxt(f'{DATA_DIR}/sushi3-2016/sushi3.idata', usecols=(2, 3, 5, 6, 7, 8))
 
         # Flip first two binary features
@@ -1113,7 +1113,7 @@ class SushiDataset(Dataset):
         features[:, 1] = 1 - features[:, 1]
         features = torch.from_numpy(features)
 
-        samples = np.count_nonzero(ratings == 4)
+        samples = len(rankings)
         max_choice_set_size = 10
 
         choice_sets = torch.full((samples, max_choice_set_size), -1, dtype=torch.long)
@@ -1121,16 +1121,13 @@ class SushiDataset(Dataset):
         choice_set_lengths = torch.zeros(samples, dtype=torch.long)
         choices = torch.zeros(samples, dtype=torch.long)
 
-        i = 0
-        for row in ratings:
-            choice_set = torch.from_numpy(np.nonzero(row >= 0)[0])
+        for i, row in enumerate(rankings):
+            choice_set = torch.from_numpy(row)
 
-            for choice in np.nonzero(row == 4)[0]:
-                choice_sets[i] = choice_set
-                choice_sets_with_features[i] = features[choice_set]
-                choice_set_lengths[i] = 10
-                choices[i] = (choice_set == choice).nonzero()
-                i += 1
+            choice_sets[i] = choice_set
+            choice_sets_with_features[i] = features[choice_set]
+            choice_set_lengths[i] = 10
+            choices[i] = 0
 
         train_data, val_data, test_data = cls.data_split(samples, torch.zeros_like(choices),
                                                          torch.zeros_like(choices),
@@ -1291,9 +1288,9 @@ class CarAltDataset(Dataset):
     name = 'car-alt'
     num_features = 21
     feature_names = ['Price / ln(income)', 'Range', 'Acceleration', 'Top speed', 'Pollution', 'Size', '"Big enough"',
-                      'Luggage space', 'Operating cost', 'Station availability', 'Sports utility vehicle', 'Sports car',
-                      'Station wagon', 'Truck', 'Van', 'Constant for EV', 'Commute < 5 x EV', 'College x EV',
-                      'Constant for CNG', 'Constant for methanol', 'College x methanol']
+                      'Luggage space', 'Operating cost', 'Station availability', 'SUV', 'Sports car',
+                      'Station wagon', 'Truck', 'Van', 'EV', 'Commute < 5 x EV', 'College x EV',
+                      'CNG', 'Methanol', 'College x methanol']
 
     @classmethod
     def load_into_pickle(cls, file_name):
@@ -1338,7 +1335,7 @@ if __name__ == '__main__':
     #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
     #     dataset.load_standardized()
 
-    CarAltDataset.print_stats()
+    SushiDataset.print_stats()
 
 
 

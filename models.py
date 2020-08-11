@@ -600,7 +600,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
         prev_total_loss = total_loss
         # print(model.contexts.detach().numpy())
 
-        # print(total_loss)
+        print(total_loss)
 
         if compute_val_stats:
             total_val_loss = 0

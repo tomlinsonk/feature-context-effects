@@ -392,7 +392,7 @@ def l1_regularization_grid_search_helper(args):
         compute_val_stats=False,
         l1_reg=reg_param)
 
-    filename = f'l1_reg_{method.name}_{dataset}_{reg_param}.pickle'
+    filename = f'l1_reg_{method.name}_{dataset.name}_{reg_param}.pickle'
 
     with open(filename, 'wb') as f:
         pickle.dump((model, train_losses), f)
@@ -413,7 +413,6 @@ def l1_regularization_grid_search(datasets, method):
     pool.join()
 
 
-
 def all_experiments_helper(dataset):
     weight_decay = 0.001
 
@@ -421,9 +420,6 @@ def all_experiments_helper(dataset):
     run_likelihood_ratio_test(dataset, weight_decay, methods)
 
     train_context_mixture_em(dataset)
-
-    for method in methods:
-        train_data_training_helper((dataset, method))
 
 
 def train_data_training_helper(args):
@@ -495,28 +491,29 @@ def time_all_em(datasets):
 
 
 if __name__ == '__main__':
-    datasets = [
-        MathOverflowDataset,
-        FacebookWallDataset, CollegeMsgDataset,
-        DistrictDataset, DistrictSmartDataset,
-        SushiDataset, ExpediaDataset,
-        CarADataset, CarBDataset, CarAltDataset,
-        SyntheticCDMDataset, SyntheticMNLDataset,
-        WikiTalkDataset, RedditHyperlinkDataset,
-        BitcoinAlphaDataset, BitcoinOTCDataset,
-        SMSADataset, SMSBDataset, SMSCDataset,
-        EmailEnronDataset, EmailEUDataset, EmailW3CDataset
-    ]
+    # datasets = [
+    #     MathOverflowDataset,
+    #     FacebookWallDataset, CollegeMsgDataset,
+    #     DistrictDataset, DistrictSmartDataset,
+    #     SushiDataset, ExpediaDataset,
+    #     CarADataset, CarBDataset, CarAltDataset,
+    #     SyntheticCDMDataset, SyntheticMNLDataset,
+    #     WikiTalkDataset, RedditHyperlinkDataset,
+    #     BitcoinAlphaDataset, BitcoinOTCDataset,
+    #     SMSADataset, SMSBDataset, SMSCDataset,
+    #     EmailEnronDataset, EmailEUDataset, EmailW3CDataset
+    # ]
 
+    datasets = [SushiDataset]
     methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
 
-    # validation_loss_grid_search(datasets, methods, update=True)
-    # train_data_training(datasets, methods)
+    validation_loss_grid_search(datasets, methods, update=True)
+    train_data_training(datasets, methods)
 
-    # learning_rate_grid_search(datasets, methods, update=True)
+    learning_rate_grid_search(datasets, methods, update=True)
     l1_regularization_grid_search(datasets, FeatureCDM)
     l1_regularization_grid_search(datasets, FeatureContextMixture)
 
-    # all_experiments(datasets)
+    all_experiments(datasets)
 
 

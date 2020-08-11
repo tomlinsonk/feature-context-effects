@@ -379,10 +379,10 @@ def compute_all_accuracies(datasets):
 
     losses = [list() for _ in range(len(methods))]
     accs = [list() for _ in range(len(methods))]
-    mean_ranks = [list() for _ in range(len(methods))]
+    mean_correct_positions = [list() for _ in range(len(methods))]
 
     all_correct_preds = [list() for _ in range(len(methods))]
-    all_ranks = [list() for _ in range(len(methods))]
+    all_correct_positions = [list() for _ in range(len(methods))]
 
     for i, dataset in enumerate(datasets):
         print('Computing accuracies for', dataset.name)
@@ -414,12 +414,12 @@ def compute_all_accuracies(datasets):
 
             losses[j].append(train_loss.item())
             accs[j].append(acc)
-            mean_ranks[j].append(np.mean(ranks / (np.array(choice_set_lengths) - 1)))
+            mean_correct_positions[j].append(np.mean(ranks / (np.array(choice_set_lengths) - 1)))
             all_correct_preds[j].append(correct_preds.numpy())
-            all_ranks[j].append(ranks)
+            all_correct_positions[j].append(ranks / (np.array(choice_set_lengths) - 1))
 
     with open(f'{RESULT_DIR}/all_prediction_results.pickle', 'wb') as f:
-        pickle.dump([np.array(losses), np.array(accs), np.array(mean_ranks), np.array(all_ranks), np.array(all_correct_preds)], f)
+        pickle.dump([np.array(losses), np.array(accs), np.array(mean_correct_positions), np.array(all_correct_positions), np.array(all_correct_preds)], f)
 
 
 def plot_general_choice_dataset_accuracies(dataset):
@@ -428,9 +428,9 @@ def plot_general_choice_dataset_accuracies(dataset):
 
     losses = []
     accs = []
-    mean_ranks = []
+    mean_corrrect_positions = []
     all_correct_preds = []
-    all_ranks = []
+    all_correct_positions = []
 
     graph, train_data, val_data, test_data, _, _ = dataset.load_standardized()
 
@@ -460,9 +460,9 @@ def plot_general_choice_dataset_accuracies(dataset):
 
         losses.append(train_loss.item())
         accs.append(acc)
-        mean_ranks.append(np.mean(ranks / (np.array(choice_set_lengths) - 1)))
+        mean_corrrect_positions.append(np.mean(ranks / (np.array(choice_set_lengths) - 1)))
         all_correct_preds.append(correct_preds.numpy())
-        all_ranks.append(ranks)
+        all_correct_positions.append(ranks / (np.array(choice_set_lengths) - 1))
 
     method_names = ['Feature MNL', 'Feature CDM', 'Mixed MNL', 'Context Mixture']
 
@@ -473,13 +473,12 @@ def plot_general_choice_dataset_accuracies(dataset):
     axes[0].set_xticklabels(method_names)
     axes[0].set_ylabel('NLL')
 
-
     axes[1].bar(range(len(method_names)), accs)
     axes[1].set_xticks(range(len(method_names)))
     axes[1].set_xticklabels(method_names)
     axes[1].set_ylabel('Accuracy')
 
-    axes[2].bar(range(len(method_names)), 1 - np.array(mean_ranks))
+    axes[2].bar(range(len(method_names)), 1 - np.array(mean_corrrect_positions))
     axes[2].set_xticks(range(len(method_names)))
     axes[2].set_xticklabels(method_names)
     axes[2].set_ylabel('Mean Correct Position')
@@ -489,24 +488,51 @@ def plot_general_choice_dataset_accuracies(dataset):
 
 def make_accuracy_table(datasets):
     with open(f'{RESULT_DIR}/all_prediction_results.pickle', 'rb') as f:
-        losses, accs, mean_ranks, _, all_ranks = pickle.load(f)
+        losses, accs, mean_correct_positions, all_correct_positions, all_correct = pickle.load(f)
 
     print(r'\toprule')
     print(r'&\textbf{MNL} & \textbf{LCL} & \textbf{Mixed logit} & \textbf{DLCL}\\')
     print(r'\midrule')
     for j, dataset in enumerate(datasets):
-        mnl = mean_ranks[0, j]
-        lcl = mean_ranks[1, j]
-        mixed_mnl = mean_ranks[2, j]
-        dlcl = mean_ranks[3, j]
+        mnl = mean_correct_positions[0, j]
+        lcl = mean_correct_positions[1, j]
+        mixed_mnl = mean_correct_positions[2, j]
+        dlcl = mean_correct_positions[3, j]
+
+        mnl_positions = all_correct_positions[0, j]
+        lcl_positions = all_correct_positions[1, j]
+        mixed_mnl_positions = all_correct_positions[2, j]
+        dlcl_positions = all_correct_positions[3, j]
+
+        try:
+            _, mnl_lcl_wilcoxon_p = stats.wilcoxon(mnl_positions, lcl_positions, alternative='greater')
+        except ValueError:
+            mnl_lcl_wilcoxon_p = 1
+
+        try:
+            _, mmnl_dlcl_wilcoxon_p = stats.wilcoxon(mixed_mnl_positions, dlcl_positions, alternative='greater')
+        except ValueError:
+            mmnl_dlcl_wilcoxon_p = 1
+        p_thresh = 0.001
 
         print(f'\\textsc{{{dataset.name}}}', end='')
-        for val in [mnl, lcl, mixed_mnl, dlcl]:
-            # print(f' & {val:.3f}'.replace('0.', '.'), end='')
-            if round(val, 3) == min(round(x, 3) for x in [mnl, lcl, mixed_mnl, dlcl]):
-                print(f' & \\textbf{{{val:.3f}}}'.replace('0.', '.'), end='')
+        for i, val in enumerate([mnl, lcl, mixed_mnl, dlcl]):
+            sig_mark = ''
+            if i == 1:
+                if mnl_lcl_wilcoxon_p < p_thresh:
+                    sig_mark = '$^*$'
+                else:
+                    sig_mark = '\\phantom{$^*$}'
+            elif i == 3:
+                if mmnl_dlcl_wilcoxon_p < p_thresh:
+                    sig_mark = '$^{**}$'
+                else:
+                    sig_mark = '\\phantom{$^{**}$}'
+
+            if round(val, 4) == min(round(x, 4) for x in [mnl, lcl, mixed_mnl, dlcl]):
+                print(f' & \\textbf{{{val:.4f}}}{sig_mark}'.replace('0.', '.'), end='')
             else:
-                print(f' & {val:.3f}'.replace('0.', '.'), end='')
+                print(f' & {val:.4f}{sig_mark}'.replace('0.', '.'), end='')
         print('\\\\')
 
     print(r'\bottomrule')
@@ -605,8 +631,15 @@ def visualize_context_effects(datasets):
 
 
 def visualize_context_effects_l1_reg(datasets, method):
-    with open(f'{RESULT_DIR}/l1_regularization_grid_search_{method.name}_results.pickle', 'rb') as f:
-        results, reg_params = pickle.load(f)
+    reg_params = [0, 0.001, 0.005, 0.01, 0.05, 0.1]
+
+    results = dict()
+
+    for dataset in datasets:
+        for reg_param in reg_params:
+            filename = f'{RESULT_DIR}/l1_reg_{method.name}_{dataset.name}_{reg_param}.pickle'
+            with open(filename, 'rb') as f:
+                results[dataset, reg_param, method] = pickle.load(f)
 
     with open(f'{CONFIG_DIR}/learning_rate_settings.pickle', 'rb') as f:
         grid_search_losses, lrs = pickle.load(f)
@@ -644,7 +677,7 @@ def visualize_context_effects_l1_reg(datasets, method):
             ax.set_xticks([])
             ax.set_yticks([])
 
-        losses = [results[dataset, reg_param, method][1] for reg_param in reg_params]
+        losses = [results[dataset, reg_param, method][1][-1] for reg_param in reg_params]
 
         baseline = MNLMixture if method == FeatureContextMixture else FeatureMNL
         baseline_loss = min([grid_search_losses[dataset, baseline, lr] for lr in lrs])
@@ -948,8 +981,14 @@ def make_likelihood_table(all_datasets):
 
 
 def visualize_context_effects_l1_reg_general_choice_dataset(dataset, method):
-    with open(f'{RESULT_DIR}/l1_regularization_grid_search_{method.name}_results.pickle', 'rb') as f:
-        results, reg_params = pickle.load(f)
+    reg_params = [0, 0.001, 0.005, 0.01, 0.05, 0.1]
+
+    results = dict()
+
+    for reg_param in reg_params:
+        filename = f'{RESULT_DIR}/l1_reg_{method.name}_{dataset.name}_{reg_param}.pickle'
+        with open(filename, 'rb') as f:
+            results[dataset, reg_param, method] = pickle.load(f)
 
     with open(f'{CONFIG_DIR}/learning_rate_settings.pickle', 'rb') as f:
         grid_search_losses, lrs = pickle.load(f)
@@ -986,10 +1025,11 @@ def visualize_context_effects_l1_reg_general_choice_dataset(dataset, method):
         #     print(f'\tslopes: {model.slopes[:, feat].detach().numpy()}')
 
         ax.matshow(model.slopes.data.numpy() if method == FeatureContextMixture else model.contexts.data.numpy(), cmap=mpl.cm.seismic, vmin=vmin, vmax=vmax, interpolation='nearest')
+
         ax.set_xticks([])
         ax.set_yticks([])
 
-    losses = [results[dataset, reg_param, method][1] for reg_param in reg_params]
+    losses = [results[dataset, reg_param, method][1][-1] for reg_param in reg_params]
 
     baseline = MNLMixture if method == FeatureContextMixture else FeatureMNL
     baseline_loss = min([grid_search_losses[dataset, baseline, lr] for lr in lrs])
@@ -1081,11 +1121,13 @@ def find_biggest_context_effects(dataset, num=5):
 
     contexts = model.contexts.data.numpy()
 
-    max_abs_idx = np.dstack(np.unravel_index(np.argsort(-abs(contexts).ravel()), contexts.shape))[0]
+    max_abs_idx = np.dstack(np.unravel_index(np.argsort(abs(contexts).ravel()), contexts.shape))[0]
 
     for row, col in max_abs_idx:
         print(f'{contexts[row, col]} from: {dataset.feature_names[col]} on: {dataset.feature_names[row]}')
 
+    for i, name in enumerate(dataset.feature_names):
+        print(name, f'{model.weights[i].item():.2f}')
 
 
 if __name__ == '__main__':
@@ -1102,7 +1144,6 @@ if __name__ == '__main__':
 
     network_datasets = synthetic_datasets + real_network_datasets
     all_datasets = network_datasets + general_datasets
-
 
     # find_biggest_context_effects(CarAltDataset)
 
@@ -1130,7 +1171,7 @@ if __name__ == '__main__':
     # for dataset in general_datasets:
     #     plot_general_choice_dataset_accuracies(dataset)
 
-    # visualize_context_effects_l1_reg_general_choice_dataset(CarAltDataset, FeatureCDM)
+    visualize_context_effects_l1_reg_general_choice_dataset(SushiDataset, FeatureCDM)
 
     # visualize_context_effects_l1_reg(network_datasets, FeatureCDM)
     # visualize_context_effects_l1_reg(network_datasets, FeatureContextMixture)
