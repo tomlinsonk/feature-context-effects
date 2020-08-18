@@ -490,23 +490,53 @@ def time_all_em(datasets):
         pickle.dump(all_results, f)
 
 
-if __name__ == '__main__':
-    # datasets = [
-    #     MathOverflowDataset,
-    #     FacebookWallDataset, CollegeMsgDataset,
-    #     DistrictDataset, DistrictSmartDataset,
-    #     SushiDataset, ExpediaDataset,
-    #     CarADataset, CarBDataset, CarAltDataset,
-    #     SyntheticCDMDataset, SyntheticMNLDataset,
-    #     WikiTalkDataset, RedditHyperlinkDataset,
-    #     BitcoinAlphaDataset, BitcoinOTCDataset,
-    #     SMSADataset, SMSBDataset, SMSCDataset,
-    #     EmailEnronDataset, EmailEUDataset, EmailW3CDataset
-    # ]
+def check_lcl_identifiability(datasets):
+    for dataset in datasets:
+        graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
+        choice_set_features, choice_set_lengths = [torch.cat([train_data[i], val_data[i], test_data[i]]).numpy() for i in range(3, len(train_data)-1)]
 
-    datasets = [CarADataset, CarBDataset, CarAltDataset]
+        n, max_choice_set_len, d = np.shape(choice_set_features)
+        m = np.sum(choice_set_lengths)
+
+        means = np.sum(choice_set_features, axis=1) / choice_set_lengths[:, None]
+
+        repeated_means = np.repeat(means, choice_set_lengths, axis=0)
+        repeated_mean_1s = np.append(repeated_means, np.ones((m, 1)), axis=1)
+
+        mean_1s = np.append(means, np.ones((n, 1)), axis=1)
+        choice_sets_rank = np.linalg.matrix_rank(mean_1s)
+
+        all_shifted_feat_vecs = choice_set_features[np.arange(max_choice_set_len)[None, :] < choice_set_lengths[:, None]] - repeated_means
+
+        # Kronecker product along axis (https://stackoverflow.com/questions/50676698/numpy-kron-along-a-given-axis)
+        krons = (repeated_mean_1s[:, :, None] * all_shifted_feat_vecs[:, None, :]).reshape(m, -1)
+        kron_rank = np.linalg.matrix_rank(krons)
+
+        kron_text = f'\\textbf{{{kron_rank}/{d**2 + d}}}' if kron_rank == d**2 + d else f'{kron_rank}/{d**2 + d}'
+        choice_set_text = f'\\textbf{{{choice_sets_rank}/{d + 1}}}' if choice_sets_rank == d+1 else f'{choice_sets_rank}/{d+1}'
+
+        print(f'\\textsc{{{dataset.name}}} & {kron_text} & {choice_set_text}\\\\')
+
+
+if __name__ == '__main__':
+    synthetic_datasets = [SyntheticMNLDataset, SyntheticCDMDataset]
+    real_network_datasets = [
+        WikiTalkDataset, RedditHyperlinkDataset,
+        BitcoinAlphaDataset, BitcoinOTCDataset,
+        SMSADataset, SMSBDataset, SMSCDataset,
+        EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+        FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
+    ]
+    general_datasets = [DistrictDataset, DistrictSmartDataset, ExpediaDataset, SushiDataset, CarADataset, CarBDataset,
+                        CarAltDataset]
+
+    network_datasets = synthetic_datasets + real_network_datasets
+    all_datasets = network_datasets + general_datasets
+
     methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
-    #
+
+    # check_lcl_identifiability(all_datasets)
+
     # validation_loss_grid_search(datasets, methods, update=True)
     # train_data_training(datasets, methods)
     #
@@ -514,6 +544,6 @@ if __name__ == '__main__':
     # l1_regularization_grid_search(datasets, FeatureCDM)
     # l1_regularization_grid_search(datasets, FeatureContextMixture)
 
-    all_experiments(datasets)
+    all_experiments([CarADataset, CarBDataset, CarAltDataset])
 
 

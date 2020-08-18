@@ -197,7 +197,6 @@ def plot_validation_grid_search(datasets):
         plt.show()
 
 
-
 def plot_dataset_stats():
     fig, axes = plt.subplots(4, 2, figsize=(6, 8))
 
@@ -486,13 +485,18 @@ def plot_general_choice_dataset_accuracies(dataset):
     plt.savefig(f'{PLOT_DIR}/{dataset.name}_test_results.pdf', bbox_inches='tight')
 
 
+def sci_not(num):
+    string = f'{num:#.2g}'
+    if 'e' in string:
+        split = string.split('e')
+        string = f'{split[0]} \\times 10^{{{int(split[1])}}}'
+    return string#.replace('0.', '.')
+
+
 def make_accuracy_table(datasets):
     with open(f'{RESULT_DIR}/all_prediction_results.pickle', 'rb') as f:
         losses, accs, mean_correct_positions, all_correct_positions, all_correct = pickle.load(f)
 
-    print(r'\toprule')
-    print(r'&\textbf{MNL} & \textbf{LCL} & \textbf{Mixed logit} & \textbf{DLCL}\\')
-    print(r'\midrule')
     for j, dataset in enumerate(datasets):
         mnl = mean_correct_positions[0, j]
         lcl = mean_correct_positions[1, j]
@@ -504,16 +508,20 @@ def make_accuracy_table(datasets):
         mixed_mnl_positions = all_correct_positions[2, j]
         dlcl_positions = all_correct_positions[3, j]
 
+        stds = [np.std(mnl_positions), np.std(lcl_positions), np.std(mixed_mnl_positions), np.std(dlcl_positions)]
+
         try:
-            _, mnl_lcl_wilcoxon_p = stats.wilcoxon(mnl_positions, lcl_positions, alternative='greater')
+            mnl_lcl_wilcoxon_W, mnl_lcl_wilcoxon_p = stats.wilcoxon(mnl_positions, lcl_positions)
         except ValueError:
+            mnl_lcl_wilcoxon_W = ''
             mnl_lcl_wilcoxon_p = 1
 
         try:
-            _, mmnl_dlcl_wilcoxon_p = stats.wilcoxon(mixed_mnl_positions, dlcl_positions, alternative='greater')
+            mmnl_dlcl_wilcoxon_W, mmnl_dlcl_wilcoxon_p = stats.wilcoxon(mixed_mnl_positions, dlcl_positions)
         except ValueError:
+            mmnl_dlcl_wilcoxon_W = ''
             mmnl_dlcl_wilcoxon_p = 1
-        p_thresh = 0.001
+        p_thresh = 0.05
 
         print(f'\\textsc{{{dataset.name}}}', end='')
         for i, val in enumerate([mnl, lcl, mixed_mnl, dlcl]):
@@ -525,17 +533,21 @@ def make_accuracy_table(datasets):
                     sig_mark = '\\phantom{$^*$}'
             elif i == 3:
                 if mmnl_dlcl_wilcoxon_p < p_thresh:
-                    sig_mark = '$^{**}$'
+                    sig_mark = '$^{\dagger}$'
                 else:
-                    sig_mark = '\\phantom{$^{**}$}'
+                    sig_mark = '\\phantom{$^{\dagger}$}'
 
             if round(val, 4) == min(round(x, 4) for x in [mnl, lcl, mixed_mnl, dlcl]):
-                print(f' & \\textbf{{{val:.4f}}}{sig_mark}'.replace('0.', '.'), end='')
+                print(f' & \\textbf{{{val:.4f}}}{sig_mark} ({stds[i]:.4f})'.replace('0.', '.'), end='')
             else:
-                print(f' & {val:.4f}{sig_mark}'.replace('0.', '.'), end='')
-        print('\\\\')
+                print(f' & {val:.4f}{sig_mark} ({stds[i]:.4f})'.replace('0.', '.'), end='')
 
-    print(r'\bottomrule')
+            if i == 1:
+                print(f' & {int(mnl_lcl_wilcoxon_W)} & ${sci_not(mnl_lcl_wilcoxon_p)}$', end='')
+            elif i == 3:
+                print(f' & {int(mmnl_dlcl_wilcoxon_W) if mmnl_dlcl_wilcoxon_W else "---"} & ${sci_not(mmnl_dlcl_wilcoxon_p)}$', end='')
+
+        print('\\\\')
 
 
 def plot_all_accuracies(datasets):
@@ -652,20 +664,19 @@ def visualize_context_effects_l1_reg(datasets, method):
     fig = plt.figure(figsize=(len(reg_params), len(datasets)*1.1), constrained_layout=False)
     gs = fig.add_gridspec(len(datasets), len(reg_params), wspace=0, hspace=0.1)
 
-    all_slopes = [results[dataset, reg_param, method][0].slopes.data.numpy() if method == FeatureContextMixture else
-                  results[dataset, reg_param, method][0].contexts.data.numpy() for reg_param in reg_params for dataset in datasets]
-
-    max_abs = np.max(np.abs(all_slopes))
-    vmin = -max_abs
-    vmax = max_abs
-
     for row, dataset in enumerate(datasets):
+        all_slopes = [results[dataset, reg_param, method][0].slopes.data.numpy() if method == FeatureContextMixture else
+                      results[dataset, reg_param, method][0].contexts.data.numpy() for reg_param in reg_params]
+
+        max_abs = np.max(np.abs(all_slopes))
+        vmin = -max_abs
+        vmax = max_abs
 
         for col, reg_param in enumerate(reg_params):
             ax = fig.add_subplot(gs[row, col])
 
             if col == 0:
-                ax.set_ylabel(dataset.name, rotation='horizontal', ha='right', fontsize=14, va='center')
+                ax.set_ylabel(dataset.name.replace('-cdm', '-lcl').replace('W3C', 'w3c'), rotation='horizontal', ha='right', fontsize=14, va='center')
             if row == 0:
                 if col == 0:
                     ax.set_title(f'$\\lambda=${reg_param}', fontsize=12)
@@ -673,7 +684,7 @@ def visualize_context_effects_l1_reg(datasets, method):
                     ax.set_title(f'{reg_param}', fontsize=12)
 
             model, loss = results[dataset, reg_param, method]
-            ax.matshow(model.slopes.data.numpy() if method == FeatureContextMixture else model.contexts.data.numpy(), cmap=mpl.cm.seismic, vmin=vmin, vmax=vmax, interpolation='nearest')
+            ax.matshow(model.slopes.data.numpy() if method == FeatureContextMixture else model.contexts.data.numpy(), cmap=mpl.cm.bwr, vmin=vmin, vmax=vmax, interpolation='nearest')
             ax.set_xticks([])
             ax.set_yticks([])
 
@@ -682,7 +693,7 @@ def visualize_context_effects_l1_reg(datasets, method):
         baseline = MNLMixture if method == FeatureContextMixture else FeatureMNL
         baseline_loss = min([grid_search_losses[dataset, baseline, lr] for lr in lrs])
 
-        p = 0.001
+        p = 0.05
         ddof = dataset.num_features**2
         sig_thresh = baseline_loss - 0.5 * chi2.isf(p, ddof)
 
@@ -723,7 +734,7 @@ def visualize_context_effects_l1_reg(datasets, method):
 
     # plt.suptitle('DLCL' if method == FeatureContextMixture else 'LCL', y=0.91, fontsize=16)
 
-    plt.savefig(f'l1_regularization_{method.name}.pdf', bbox_inches='tight')
+    plt.savefig(f'l1-regularization-{method.name}.pdf'.replace('feature_cdm', 'lcl'), bbox_inches='tight')
 
 
 def lcl_context_effect_tsne(datasets):
@@ -877,13 +888,16 @@ def plot_em_timing(dataset):
 def plot_binned_mnl_example():
     # _, _, _, _, mathoverflow_means, mathoverflow_stds = MathOverflowDataset.load_standardized()
     # _, _, _, _, synthetic_mnl_means, synthetic_mnl_stds = SyntheticMNLDataset.load_standardized()
+    # _, _, _, _, enron_means, enron_stds = EmailEnronDataset.load_standardized()
 
     # Hard-coded to avoid loading whole datasets
     means = [[4.9191475 , 4.656493  , 0.2162834 , 0.13189632, 0.13194366, 0.02068096],
-             [2.6338944e+00, 1.5371358e+00, 2.6449988e-02, 4.7664855e-02, 4.7703274e-02, 1.7460630e-03]]
+             [2.6338944e+00, 1.5371358e+00, 2.6449988e-02, 4.7664855e-02, 4.7703274e-02, 1.7460630e-03],
+             [1.0776899,  0.5040105,  0.02805469, 0.04287676, 0.07075235, 0.00146797]]
 
     stds = [[0.46722016, 0.8068568 , 0.35599306, 0.03198218, 0.03193424, 0.03406612],
-            [1.3703023 , 1.255706  , 0.1655428 , 0.0230962 , 0.01190723,0.01028514]]
+            [1.3703023 , 1.255706  , 0.1655428 , 0.0230962 , 0.01190723, 0.01028514],
+            [1.2532787,  0.75487214, 0.21800406, 0.05251113, 0.02918332, 0.00996732]]
 
     with open(f'{RESULT_DIR}/{MathOverflowDataset.name}_binned_mnl_params.pickle', 'rb') as f:
         mathoverflow_data = pickle.load(f)
@@ -891,9 +905,12 @@ def plot_binned_mnl_example():
     with open(f'{RESULT_DIR}/{SyntheticMNLDataset.name}_binned_mnl_params.pickle', 'rb') as f:
         synthetic_mnl_data = pickle.load(f)
 
-    fig, axes = plt.subplots(2, 2, figsize=(4.5, 3.5), sharey=True, sharex='col')
+    with open(f'{RESULT_DIR}/{EmailEnronDataset.name}_binned_mnl_params.pickle', 'rb') as f:
+        enron_data = pickle.load(f)
 
-    for row, data in enumerate([synthetic_mnl_data, mathoverflow_data]):
+    fig, axes = plt.subplots(3, 2, figsize=(4.5, 5.5), sharey=True, sharex='col')
+
+    for row, data in enumerate([synthetic_mnl_data, mathoverflow_data, enron_data]):
         for col in range(2):
             bins, mnl_utilities, bin_counts, bin_choice_set_log_lengths, bin_losses = data[col]
 
@@ -922,17 +939,19 @@ def plot_binned_mnl_example():
 
     axes[0, 1].text(1.05, 0.5, 'synthetic-mnl', rotation=270, size=12, ha='left', va='center', transform=axes[0, 1].transAxes)
     axes[1, 1].text(1.05, 0.5, 'mathoverflow', rotation=270, size=12, ha='left', va='center', transform=axes[1, 1].transAxes)
+    axes[2, 1].text(1.05, 0.5, 'email-enron', rotation=270, size=12, ha='left', va='center', transform=axes[2, 1].transAxes)
 
-    axes[1, 0].set_xlabel('Choice Set In-Degree')
-    axes[1, 1].set_xlabel('Choice Set Shared Nbrs.')
+    axes[2, 0].set_xlabel('Choice Set In-Degree')
+    axes[2, 1].set_xlabel('Choice Set Shared Nbrs.')
 
     axes[0, 0].set_ylabel('Shared Nbrs. Util.')
     axes[1, 0].set_ylabel('Shared Nbrs. Util.')
+    axes[2, 0].set_ylabel('Shared Nbrs. Util.')
 
-    axes[1, 0].set_xticks([1, 10, 100, 1000])
-    axes[1, 0].set_xticklabels([1, 10, 100, ''])
-    axes[1, 1].set_xticks([1, 10, 100, 1000])
-    axes[1, 1].set_xticklabels([1, 10, 100, 1000])
+    axes[2, 0].set_xticks([1, 10, 100, 1000])
+    axes[2, 0].set_xticklabels([1, 10, 100, ''])
+    axes[2, 1].set_xticks([1, 10, 100, 1000])
+    axes[2, 1].set_xticklabels([1, 10, 100, 1000])
 
     plt.subplots_adjust(wspace=0, hspace=0)
 
@@ -963,21 +982,57 @@ def make_likelihood_table(all_datasets):
                 latex += f' & {best_nll}'
 
             if method in [FeatureCDM, FeatureContextMixture]:
-                sig_thresh = 0.001
+                sig_thresh = 0.05
 
                 baseline = MNLMixture if method == FeatureContextMixture else FeatureMNL
                 baseline_nll = min([data[dataset, baseline, lr] for lr in lrs])
 
                 if stats.chi2.sf(2 * (baseline_nll - best_nll), dataset.num_features ** 2) < sig_thresh:
-                    latex += '$^*$' if method == FeatureCDM else '$^{**}$'
+                    latex += '$^*$' if method == FeatureCDM else '$^{\dagger}$'
                 else:
-                    latex += '\phantom{$^*$}' if method == FeatureCDM else '\phantom{$^{**}$}'
+                    latex += '\phantom{$^*$}' if method == FeatureCDM else '\phantom{$^{\dagger}$}'
 
         latex += '\\\\\n'
 
     latex += '\\bottomrule\n\\end{tabular}'
 
     print(latex)
+
+
+def make_big_likelihood_table(all_datasets):
+    with open(f'{CONFIG_DIR}/learning_rate_settings.pickle', 'rb') as f:
+        data, lrs = pickle.load(f)
+
+    methods = [FeatureMNL, FeatureCDM, MNLMixture, FeatureContextMixture]
+
+    for dataset in all_datasets:
+        print(f'\\textsc{{{dataset.name}}}', end='')
+
+        best_nll_overall = min(int(data[dataset, method, lr]) for lr in lrs for method in methods)
+
+        for method in methods:
+            best_nll = min(int(data[dataset, method, lr]) for lr in lrs)
+            if best_nll == best_nll_overall:
+                print(f' & \\textbf{{{best_nll}}}', end='')
+            else:
+                print(f' & {best_nll}', end='')
+
+            if method in [FeatureCDM, FeatureContextMixture]:
+                sig_thresh = 0.05
+
+                baseline = MNLMixture if method == FeatureContextMixture else FeatureMNL
+                baseline_nll = min([data[dataset, baseline, lr] for lr in lrs])
+
+                statistic = 2 * (baseline_nll - best_nll)
+                p_val = stats.chi2.sf(statistic, dataset.num_features ** 2)
+                if p_val < sig_thresh:
+                    print('$^*$' if method == FeatureCDM else '$^{\dagger}$', end='')
+                else:
+                    print('\phantom{$^*$}' if method == FeatureCDM else '\phantom{$^{\dagger}$}', end='')
+
+                print(f' & ${round(statistic)}$ & ${sci_not(p_val)}$', end='')
+
+        print('\\\\')
 
 
 def visualize_context_effects_l1_reg_general_choice_dataset(dataset, method):
@@ -1121,13 +1176,16 @@ def find_biggest_context_effects(dataset, num=5):
 
     contexts = model.contexts.data.numpy()
 
-    max_abs_idx = np.dstack(np.unravel_index(np.argsort(abs(contexts).ravel()), contexts.shape))[0]
+    max_abs_idx = np.dstack(np.unravel_index(np.argsort(-abs(contexts).ravel()), contexts.shape))[0]
 
-    for row, col in max_abs_idx:
-        print(f'{contexts[row, col]} from: {dataset.feature_names[col]} on: {dataset.feature_names[row]}')
+    print('Biggest effects in', dataset.name)
+    for row, col in max_abs_idx[:num]:
+        print(f'\\emph{{{dataset.feature_names[col].lower()}}} on \emph{{{dataset.feature_names[row].lower()}}} & ${contexts[row, col]:.2f}$\\\\')
 
+    print('base uts:')
     for i, name in enumerate(dataset.feature_names):
         print(name, f'{model.weights[i].item():.2f}')
+    print()
 
 
 if __name__ == '__main__':
@@ -1146,10 +1204,13 @@ if __name__ == '__main__':
     all_datasets = network_datasets + general_datasets
 
     # find_biggest_context_effects(CarAltDataset)
+    # find_biggest_context_effects(ExpediaDataset)
+    # find_biggest_context_effects(SushiDataset)
 
     # context_effects_from_data(ExpediaDataset)
 
-    make_likelihood_table(all_datasets)
+    # make_likelihood_table(all_datasets)
+    # make_big_likelihood_table(all_datasets)
 
     # plot_validation_grid_search(all_datasets)
 
@@ -1177,7 +1238,7 @@ if __name__ == '__main__':
     # visualize_context_effects_l1_reg(network_datasets, FeatureContextMixture)
 
     # visualize_context_effects(network_datasets)
-    compute_all_accuracies(all_datasets)
+    # compute_all_accuracies(all_datasets)
     make_accuracy_table(all_datasets)
 
     # plot_all_accuracies(all_datasets)

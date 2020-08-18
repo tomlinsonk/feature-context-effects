@@ -1328,14 +1328,12 @@ class CarAltDataset(Dataset):
 
 
 if __name__ == '__main__':
-    # for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
-    #                 BitcoinAlphaDataset, BitcoinOTCDataset,
-    #                 SMSADataset, SMSBDataset, SMSCDataset,
-    #                 EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-    #                 FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
-    #     dataset.load_standardized()
-
-    SushiDataset.print_stats()
+    for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
+                    BitcoinAlphaDataset, BitcoinOTCDataset,
+                    SMSADataset, SMSBDataset, SMSCDataset,
+                    EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+                    FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
+        dataset.print_stats()
 
 
 
