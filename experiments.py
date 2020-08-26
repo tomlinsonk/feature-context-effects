@@ -9,11 +9,8 @@ import torch
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
-    EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
-    EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
-    RedditHyperlinkDataset, BitcoinOTCDataset, BitcoinAlphaDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
-    ExpediaDataset, SushiDataset, DistrictDataset, DistrictSmartDataset, CarADataset, CarBDataset, CarAltDataset
+from datasets import ALL_DATASETS
+
 from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
     FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em, \
     MNLMixture, train_mnl_mixture
@@ -515,8 +512,6 @@ def check_lcl_identifiability(datasets):
 
 
 if __name__ == '__main__':
-    from datasets import ALL_DATASETS
-
     methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
 
     # check_lcl_identifiability(ALL_DATASETS)
