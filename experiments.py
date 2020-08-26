@@ -11,12 +11,10 @@ from tqdm import tqdm
 
 from datasets import ALL_DATASETS
 
-from models import train_history_cdm, train_lstm, train_history_mnl, train_feature_mnl, HistoryCDM, HistoryMNL, LSTM, \
-    FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em, \
+from models import train_feature_mnl, FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em, \
     MNLMixture, train_mnl_mixture
 
-training_methods = {HistoryCDM: train_history_cdm, HistoryMNL: train_history_mnl, LSTM: train_lstm, FeatureMNL: train_feature_mnl,
-                    FeatureCDM: train_feature_cdm, FeatureContextMixture: train_feature_context_mixture, MNLMixture: train_mnl_mixture}
+training_methods = {FeatureMNL: train_feature_mnl, FeatureCDM: train_feature_cdm, FeatureContextMixture: train_feature_context_mixture, MNLMixture: train_mnl_mixture}
 
 CONFIG_DIR = 'config'
 
