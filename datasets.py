@@ -55,7 +55,6 @@ class Dataset(ABC):
 
         return graph, train_data, val_data, test_data, means, stds
 
-
     @classmethod
     @abstractmethod
     def load_into_pickle(cls, file_name):
@@ -93,69 +92,9 @@ class Dataset(ABC):
         print(f'\tNodes: {len(graph.nodes)}')
         print(f'\tEdges: {len(graph.edges)}')
         print(f'\tSamples: {len(histories)}')
-        print(f'\tLongest Path: {max(history_lengths) + 1}')
         print(f'\tLargest Choice Set: {max(choice_set_lengths)}')
+        print(f'\tMean Choice Set: {np.mean(choice_set_lengths)}')
 
-    @classmethod
-    def build_data_from_paths(cls, paths, graph):
-        largest_choice_set = max(graph.out_degree(), key=lambda x: x[1])[1]
-        longest_path = max(len(path) for path in paths)
-        n = len(graph.nodes)
-
-        choice_sets = []
-        choice_set_lengths = []
-        choices = []
-        histories = []
-        history_lengths = []
-
-        for path in tqdm(paths):
-            for i in range(len(path) - 1):
-                neighbors = [graph.nodes[node]['index'] for node in graph.neighbors(path[i])]
-                choice_sets.append(neighbors + [n] * (largest_choice_set - len(neighbors)))
-                if len(choice_sets[-1]) != largest_choice_set:
-                    print(len(neighbors), len(choice_sets[-1]))
-                choice_set_lengths.append(len(neighbors))
-
-                choices.append(choice_sets[-1].index(graph.nodes[path[i + 1]]['index']))
-
-                histories.append([graph.nodes[node]['index'] for node in path[i::-1]] + [n] * (longest_path - i - 1))
-                history_lengths.append(i + 1)
-
-        histories = torch.tensor(histories)
-        history_lengths = torch.tensor(history_lengths)
-        choice_sets = torch.tensor(choice_sets)
-        choice_set_lengths = torch.tensor(choice_set_lengths)
-        choices = torch.tensor(choices)
-
-        return histories, history_lengths, choice_sets, choice_set_lengths, choices
-
-    @classmethod
-    def filter_paths_by_length(cls, paths, min_threshold, max_threshold):
-        return [path for path in paths if min_threshold <= len(path) <= max_threshold]
-
-    @classmethod
-    def filter_paths_by_node_outdegree(cls, paths, max_outdegree):
-        edges = [(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)]
-        graph = nx.DiGraph(edges)
-
-        to_remove = set()
-        for node, degree in graph.out_degree():
-            if degree > max_outdegree:
-                to_remove.add(node)
-
-        return [path for path in paths if all(node not in to_remove for node in path)]
-
-    @classmethod
-    def filter_paths_by_node_appearances(cls, paths, min_appearances):
-        page_counts = np.bincount(list(itertools.chain.from_iterable(paths)))
-
-        len_paths = None
-        while len_paths != len(paths):
-            len_paths = len(paths)
-            paths = [path for path in paths if all(page_counts[page] >= min_appearances for page in path)]
-            page_counts = np.bincount(list(itertools.chain.from_iterable(paths)))
-
-        return paths
 
     @classmethod
     def index_nodes(cls, graph):
@@ -273,177 +212,6 @@ class Dataset(ABC):
         min_lr_idx, min_wd_idx = np.unravel_index(np.argmin(loss_grid), loss_grid.shape)
 
         return lrs[min_lr_idx], wds[min_wd_idx]
-
-
-class WikispeediaDataset(Dataset):
-
-    name = 'wikispeedia'
-
-    @classmethod
-    def _remove_back(cls, path):
-        i = 0
-        while i < len(path):
-            if path[i] == '<':
-                path.pop(i)
-                path.pop(i - 1)
-                i -= 1
-            else:
-                i += 1
-
-    @classmethod
-    def load_into_pickle(cls, file_name):
-        graph = nx.read_edgelist(f'{DATA_DIR}/wikispeedia_paths-and-graph/links.tsv', create_using=nx.DiGraph)
-        graph.add_node('Wikipedia_Text_of_the_GNU_Free_Documentation_License')
-
-        df = pd.read_csv(f'{DATA_DIR}/wikispeedia_paths-and-graph/paths_finished.tsv', sep='\t', comment='#',
-                         names=['hashedIpAddress', 'timestamp', 'durationInSec', 'path', 'rating'])
-
-        # Edges not in graph but in paths:
-        graph.add_edge('Bird', 'Wikipedia_Text_of_the_GNU_Free_Documentation_License')
-        graph.add_edge('Finland', '%C3%85land')
-        graph.add_edge('Republic_of_Ireland', '%C3%89ire')
-        graph.add_edge('Claude_Monet', '%C3%89douard_Manet')
-
-        paths = []
-        for path in df['path']:
-            split_path = path.split(';')
-            cls._remove_back(split_path)
-            paths.append(split_path)
-
-        paths = cls.filter_paths_by_length(paths, 0, 20)
-        cls.index_nodes(graph)
-
-        histories, history_lengths, choice_sets, choice_set_lengths, choices = cls.build_data_from_paths(paths, graph)
-        m = len(histories)
-        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_set_lengths, choices)
-
-        with open(file_name, 'wb') as f:
-            pickle.dump((graph, train_data, val_data, test_data), f)
-
-
-class YoochooseDataset(Dataset):
-    name = 'yoochoose'
-
-    @classmethod
-    def load_into_pickle(cls, file_name):
-        yoochoose_clicks = np.loadtxt(f'{DATA_DIR}/recsys-challenge-2015/yoochoose-clicks-abbrev.dat', dtype=int)
-
-        paths = []
-        current_user = -1
-        current_path = []
-        for user, item in tqdm(yoochoose_clicks):
-            if user == current_user:
-                current_path.append(item)
-            else:
-                paths.append(current_path)
-                current_user = user
-                current_path = [item]
-        paths.append(current_path)
-
-        paths = cls.filter_paths_by_length(paths, 3, 50)
-        paths = cls.filter_paths_by_node_outdegree(paths, 500)
-        paths = cls.filter_paths_by_node_appearances(paths, 25)
-
-        graph = nx.DiGraph([(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)])
-        cls.index_nodes(graph)
-
-        histories, history_lengths, choice_sets, choice_set_lengths, choices = cls.build_data_from_paths(paths, graph)
-        m = len(histories)
-
-        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_set_lengths,
-                                                         choices)
-
-        with open(file_name, 'wb') as f:
-            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
-
-
-class KosarakDataset(Dataset):
-    name = 'kosarak'
-
-    @classmethod
-    def load_into_pickle(cls, file_name):
-
-        with open(f'{DATA_DIR}/uchoice-Kosarak/uchoice-Kosarak.txt', 'rb') as f:
-            paths = [list(map(int, line.split())) for line in f.readlines()]
-
-        paths = cls.filter_paths_by_length(paths, 3, 50)
-        paths = cls.filter_paths_by_node_outdegree(paths, 6000)
-        paths = cls.filter_paths_by_node_appearances(paths, 2)
-
-        edges = [(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)]
-        graph = nx.DiGraph(edges)
-
-        cls.index_nodes(graph)
-
-        histories, history_lengths, choice_sets, choice_set_lengths, choices = cls.build_data_from_paths(paths, graph)
-        m = len(histories)
-
-        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_set_lengths,
-                                                         choices)
-
-        with open(file_name, 'wb') as f:
-            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
-
-
-class LastFMGenreDataset(Dataset):
-    name = 'lastfm-genre'
-
-    @classmethod
-    def load_into_pickle(cls, file_name):
-
-        with open(f'{DATA_DIR}/uchoice-Lastfm-Genres/uchoice-Lastfm-Genres.txt', 'rb') as f:
-            paths = [list(map(int, line.split())) for line in f.readlines()]
-
-        paths = cls.filter_paths_by_length(paths, 3, 50)
-        paths = cls.filter_paths_by_node_appearances(paths, 250)
-
-        graph = nx.DiGraph([(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)])
-        cls.index_nodes(graph)
-
-        histories, history_lengths, choice_sets, choice_set_lengths, choices = cls.build_data_from_paths(paths, graph)
-        m = len(histories)
-
-        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_set_lengths,
-                                                         choices)
-
-        with open(file_name, 'wb') as f:
-            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
-
-
-class ORCIDSwitchDataset(Dataset):
-    name = 'orcid-switches'
-
-    @classmethod
-    def load_into_pickle(cls, file_name):
-        switches = pd.read_csv(f'{DATA_DIR}/orcid-switches/all_switches.csv', usecols=('oid', 'from_matched_field', 'to_matched_field')).to_numpy()
-
-        paths = []
-        current_user = None
-        current_path = []
-        for oid, from_field, to_field, in switches:
-            if oid == current_user:
-                current_path.append(to_field)
-            else:
-                paths.append(current_path)
-                current_user = oid
-                current_path = [from_field, to_field]
-        paths.append(current_path)
-
-        print('Initial paths', len(paths))
-        paths = cls.filter_paths_by_length(paths, 3, np.inf)
-        print('Length filtered paths', len(paths))
-
-        graph = nx.DiGraph([(path[i], path[i + 1]) for path in paths for i in range(len(path) - 1)])
-        cls.index_nodes(graph)
-
-        histories, history_lengths, choice_sets, choice_set_lengths, choices = cls.build_data_from_paths(paths, graph)
-        m = len(histories)
-
-        train_data, val_data, test_data = cls.data_split(m, histories, history_lengths, choice_sets, choice_set_lengths,
-                                                         choices)
-
-        with open(file_name, 'wb') as f:
-            pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
 
 
 class EmailEnronDataset(Dataset):
@@ -1327,12 +1095,24 @@ class CarAltDataset(Dataset):
             pickle.dump((nx.DiGraph(), train_data, val_data, test_data), f, protocol=4)
 
 
+SYNTHETIC_DATASETS = [SyntheticMNLDataset, SyntheticCDMDataset]
+REAL_NETWORK_DATASETS = [
+    WikiTalkDataset, RedditHyperlinkDataset,
+    BitcoinAlphaDataset, BitcoinOTCDataset,
+    SMSADataset, SMSBDataset, SMSCDataset,
+    EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
+    FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
+]
+REAL_GENERAL_DATASETS = [DistrictDataset, DistrictSmartDataset, ExpediaDataset, SushiDataset, CarADataset, CarBDataset,
+                    CarAltDataset]
+
+NETWORK_DATASETS = SYNTHETIC_DATASETS + REAL_NETWORK_DATASETS
+ALL_DATASETS = NETWORK_DATASETS + REAL_GENERAL_DATASETS
+
+
 if __name__ == '__main__':
-    for dataset in [WikiTalkDataset, RedditHyperlinkDataset,
-                    BitcoinAlphaDataset, BitcoinOTCDataset,
-                    SMSADataset, SMSBDataset, SMSCDataset,
-                    EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-                    FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset]:
+
+    for dataset in ALL_DATASETS:
         dataset.print_stats()
 
 

@@ -524,25 +524,12 @@ def toy_example():
     print(model.beta)
 
 
-def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute_val_stats=True, timeout_min=60):
-    # if torch.cuda.is_available():
-    #     device = torch.device('cuda:0')
-    #     print('Running on GPU')
-    # else:
-    #     device = torch.device('cpu')
-    #     print('Running on CPU')
-
+def train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=True):
     device = torch.device('cpu')
     torch.set_num_threads(1)
-    # print('Running on CPU')
 
     model.device = device
     model.to(device)
-
-    # if 'history' in model.name:
-    #     print(f'Training {model.name} dim={model.dim}, lr={lr}, wd={weight_decay}, beta={model.beta.item()}, learn_beta={model.learn_beta}...')
-    # else:
-    #     print(f'Training {model.name}, lr={lr}, wd={weight_decay}...')
 
     batch_size = 128
     train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, device=device)
@@ -555,11 +542,8 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
     train_accs = []
     val_losses = []
     val_accs = []
-    prev_total_loss = np.inf
 
-    start = time.time()
-
-    for epoch in range(500):
+    for epoch in tqdm(range(500)):
         train_loss = 0
         train_count = 0
         train_correct = 0
@@ -578,10 +562,6 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
             loss.backward()
             optimizer.step()
 
-            if 'history' in model.name:
-                with torch.no_grad():
-                    model.beta.data = model.beta.clamp(0, 1)
-
             model.eval()
             vals, idxs = choice_pred.max(1)
             train_correct += (idxs == choices).long().sum().item() / choice_pred.size(0)
@@ -590,17 +570,6 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
 
         train_accs.append(train_correct / train_count)
         train_losses.append(total_loss)
-
-        # timeout
-        if (time.time() - start) / 60 > timeout_min:
-            break
-
-        # if prev_total_loss - total_loss < prev_total_loss * 0.0000001 or total_loss < 0.001:
-        #     break
-        prev_total_loss = total_loss
-        # print(model.contexts.detach().numpy())
-
-        # print(total_loss)
 
         if compute_val_stats:
             total_val_loss = 0
@@ -622,20 +591,7 @@ def train_model(model, train_data, val_data, lr=1e-4, weight_decay=1e-4, compute
             val_losses.append(val_loss)
             val_accs.append(val_correct / val_count)
 
-            # print(val_accs[-1])
-
-    # print('Total loss:', total_loss)
     return model, train_losses, train_accs, val_losses, val_accs
-
-
-def train_history_cdm(n, train_data, val_data, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
-    model = HistoryCDM(n, dim, beta, learn_beta)
-    return train_model(model, train_data, val_data, lr, weight_decay)
-
-
-def train_history_mnl(n, train_data, val_data, dim=64, beta=0.5, lr=1e-4, weight_decay=1e-4, learn_beta=False):
-    model = HistoryMNL(n, dim, beta, learn_beta)
-    return train_model(model, train_data, val_data, lr, weight_decay)
 
 
 def train_feature_mnl(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
@@ -656,72 +612,6 @@ def train_feature_context_mixture(train_data, val_data, num_features, lr=1e-4, w
 def train_mnl_mixture(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
     model = MNLMixture(num_features)
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
-
-
-def train_lstm(n, train_data, val_data, dim=64, lr=1e-4, weight_decay=1e-4, beta=None, learn_beta=None):
-    print(f'Training LSTM dim={dim}, lr={lr}, wd={weight_decay}...')
-    batch_size = 128
-
-    train_reverse_history = train_data[0].clone().detach()
-    val_reverse_history = val_data[0].clone().detach()
-    # Reverse histories
-    for i in range(train_reverse_history.size(0)):
-        train_reverse_history[i, :train_data[1][i]] = train_reverse_history[i, :train_data[1][i]].flip(0)
-
-    for i in range(val_reverse_history.size(0)):
-        val_reverse_history[i, :val_data[1][i]] = val_reverse_history[i, :val_data[1][i]].flip(0)
-
-    train_data = train_reverse_history, train_data[1], train_data[2], train_data[3], train_data[4]
-    val_data = val_reverse_history, val_data[1], val_data[2], val_data[3], val_data[4]
-
-    model = LSTM(n, dim)
-
-    train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, sort_batch=True, sort_index=1)
-    val_data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True, sort_batch=True, sort_index=1)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, amsgrad=True, weight_decay=weight_decay)
-
-    train_losses = []
-    train_accs = []
-    val_losses = []
-    val_accs = []
-    for epoch in tqdm(range(500)):
-        train_loss = 0
-        train_count = 0
-        train_correct = 0
-        for histories, history_lengths, choice_sets, choice_set_lengths, choices in train_data_loader:
-            model.train()
-            choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
-            loss = model.loss(choice_pred, choices)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            model.eval()
-            vals, idxs = choice_pred.max(1)
-            train_correct += (idxs == choices).long().sum().item() / choice_pred.size(0)
-            train_loss += loss.item()
-            train_count += 1
-
-        train_accs.append(train_correct / train_count)
-        train_losses.append(train_loss / train_count)
-
-        val_loss = 0
-        val_count = 0
-        val_correct = 0
-        model.eval()
-        for histories, history_lengths, choice_sets, choice_set_lengths, choices in val_data_loader:
-            choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
-            loss = model.loss(choice_pred, choices)
-            vals, idxs = choice_pred.max(1)
-            val_correct += (idxs == choices).long().sum().item() / choice_pred.size(0)
-            val_loss += loss.item()
-            val_count += 1
-
-        val_losses.append(val_loss / val_count)
-        val_accs.append(val_correct / val_count)
-
-    return model, train_losses, train_accs, val_losses, val_accs
 
 
 def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_return=False, timeout_seconds=None, initialize_from=None):

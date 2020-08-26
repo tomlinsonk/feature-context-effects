@@ -414,11 +414,7 @@ def l1_regularization_grid_search(datasets, method):
 
 
 def all_experiments_helper(dataset):
-    # weight_decay = 0.001
-    #
-    # learn_binned_mnl(dataset)
-    # run_likelihood_ratio_test(dataset, weight_decay, methods)
-
+    learn_binned_mnl(dataset)
     train_context_mixture_em(dataset)
 
 
@@ -442,7 +438,7 @@ def train_data_training(datasets, methods):
 
 
 def all_experiments(datasets):
-    pool = Pool(18)
+    pool = Pool(30)
     pool.map(all_experiments_helper, datasets)
     pool.close()
     pool.join()
@@ -519,31 +515,19 @@ def check_lcl_identifiability(datasets):
 
 
 if __name__ == '__main__':
-    synthetic_datasets = [SyntheticMNLDataset, SyntheticCDMDataset]
-    real_network_datasets = [
-        WikiTalkDataset, RedditHyperlinkDataset,
-        BitcoinAlphaDataset, BitcoinOTCDataset,
-        SMSADataset, SMSBDataset, SMSCDataset,
-        EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-        FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
-    ]
-    general_datasets = [DistrictDataset, DistrictSmartDataset, ExpediaDataset, SushiDataset, CarADataset, CarBDataset,
-                        CarAltDataset]
-
-    network_datasets = synthetic_datasets + real_network_datasets
-    all_datasets = network_datasets + general_datasets
+    from datasets import ALL_DATASETS
 
     methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
 
-    # check_lcl_identifiability(all_datasets)
+    # check_lcl_identifiability(ALL_DATASETS)
 
-    # validation_loss_grid_search(datasets, methods, update=True)
-    # train_data_training(datasets, methods)
-    #
-    # learning_rate_grid_search(datasets, methods, update=True)
-    # l1_regularization_grid_search(datasets, FeatureCDM)
-    # l1_regularization_grid_search(datasets, FeatureContextMixture)
+    validation_loss_grid_search(ALL_DATASETS, methods, update=False)
+    train_data_training(ALL_DATASETS, methods)
 
-    all_experiments([CarADataset, CarBDataset, CarAltDataset])
+    learning_rate_grid_search(ALL_DATASETS, methods, update=False)
+    l1_regularization_grid_search(ALL_DATASETS, FeatureCDM)
+    l1_regularization_grid_search(ALL_DATASETS, FeatureContextMixture)
+
+    # all_experiments(ALL_DATASETS)
 
 

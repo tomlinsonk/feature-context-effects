@@ -15,17 +15,12 @@ from tqdm import tqdm
 from scipy.ndimage.filters import gaussian_filter1d
 from sklearn.manifold import TSNE
 
-
-from datasets import WikispeediaDataset, KosarakDataset, YoochooseDataset, LastFMGenreDataset, ORCIDSwitchDataset, \
-    EmailEnronDataset, CollegeMsgDataset, EmailEUDataset, MathOverflowDataset, FacebookWallDataset, \
-    EmailEnronCoreDataset, EmailW3CDataset, EmailW3CCoreDataset, SMSADataset, SMSBDataset, SMSCDataset, WikiTalkDataset, \
-    RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SyntheticMNLDataset, SyntheticCDMDataset, \
-    ExpediaDataset, SushiDataset, DistrictDataset, DistrictSmartDataset, CarADataset, CarBDataset, CarAltDataset
+import datasets
 from models import HistoryCDM, HistoryMNL, DataLoader, LSTM, FeatureMNL, FeatureCDM, train_feature_mnl, \
     FeatureContextMixture, train_model, FeatureSelector, RandomSelector, MNLMixture
 
-PARAM_DIR = 'params/500-epochs'
-RESULT_DIR = 'results/500-epochs'
+PARAM_DIR = 'params'
+RESULT_DIR = 'results'
 PLOT_DIR = 'plots'
 CONFIG_DIR = 'config'
 
@@ -1188,21 +1183,42 @@ def find_biggest_context_effects(dataset, num=5):
     print()
 
 
+def compare_em_to_sgd(datasets):
+    with open(f'{CONFIG_DIR}/learning_rate_settings.pickle', 'rb') as f:
+        data, lrs = pickle.load(f)
+
+    em_lrs = [0.001, 0.01, 0.1]
+    em_epochs = [10, 50, 100]
+
+    with open(f'{RESULT_DIR}/all_datasets_em_timing.pickle', 'rb') as f:
+        em_results = pickle.load(f)
+
+    for dataset in datasets:
+        sgd_nll = min(int(data[dataset, FeatureContextMixture, lr]) for lr in lrs)
+
+        em_model = load_feature_model(FeatureContextMixture, dataset.num_features, f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
+
+        graph, train_data, val_data, test_data, _, _ = dataset.load_standardized()
+        choice_set_features, choice_set_lengths, choices = [
+            torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
+
+        em_nll = int(torch.nn.functional.nll_loss(em_model(choice_set_features, choice_set_lengths), choices,
+                                               reduction='sum').item())
+
+        # em_nll = min([int(em_results[dataset][lr, epochs][0][-1]) for lr in em_lrs for epochs in em_epochs if len(em_results[dataset][lr, epochs][0]) > 0], default=np.inf)
+
+        sgd = f'{sgd_nll}'
+        if sgd_nll == min(sgd_nll, em_nll):
+            sgd = f'\\textbf{{{sgd_nll}}}'
+
+        em = f'{em_nll}'
+        if em_nll == min(sgd_nll, em_nll):
+            em = f'\\textbf{{{em_nll}}}'
+
+        print(f'{dataset.name} & {sgd} & {em}\\\\')
+
+
 if __name__ == '__main__':
-
-    synthetic_datasets = [SyntheticMNLDataset, SyntheticCDMDataset]
-    real_network_datasets = [
-        WikiTalkDataset, RedditHyperlinkDataset,
-        BitcoinAlphaDataset, BitcoinOTCDataset,
-        SMSADataset, SMSBDataset, SMSCDataset,
-        EmailEnronDataset, EmailEUDataset, EmailW3CDataset,
-        FacebookWallDataset, CollegeMsgDataset, MathOverflowDataset
-    ]
-    general_datasets = [DistrictDataset, DistrictSmartDataset, ExpediaDataset, SushiDataset, CarADataset, CarBDataset, CarAltDataset]
-
-    network_datasets = synthetic_datasets + real_network_datasets
-    all_datasets = network_datasets + general_datasets
-
     # find_biggest_context_effects(CarAltDataset)
     # find_biggest_context_effects(ExpediaDataset)
     # find_biggest_context_effects(SushiDataset)
@@ -1211,6 +1227,7 @@ if __name__ == '__main__':
 
     # make_likelihood_table(all_datasets)
     # make_big_likelihood_table(all_datasets)
+    compare_em_to_sgd(datasets.ALL_DATASETS)
 
     # plot_validation_grid_search(all_datasets)
 
@@ -1239,7 +1256,7 @@ if __name__ == '__main__':
 
     # visualize_context_effects(network_datasets)
     # compute_all_accuracies(all_datasets)
-    make_accuracy_table(all_datasets)
+    # make_accuracy_table(all_datasets)
 
     # plot_all_accuracies(all_datasets)
     # plot_general_choice_dataset_accuracies(ExpediaDataset)
