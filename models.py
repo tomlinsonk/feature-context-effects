@@ -618,7 +618,7 @@ def train_mnl_mixture(train_data, val_data, num_features, lr=1e-4, weight_decay=
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 
-def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_return=False, timeout_seconds=None, initialize_from=None):
+def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_return=False, timeout_min=60, initialize_from=None):
     torch.set_num_threads(1)
 
     n = num_features
@@ -641,8 +641,6 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
 
     train_data_loader = DataLoader([choice_set_features, choice_set_lengths, choices, torch.arange(len(choices))], batch_size=128)
 
-    nll = np.inf
-    prev_nll = np.inf
     start_time = time.time()
     iter_times = []
     losses = []
@@ -653,12 +651,8 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
     model.slopes.data = C
     model.weights.data = torch.log(alpha)
 
-    prev_nll = nll
-    nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
-
-    # print('START NLL:', nll)
-
-    while nll * 1.0000001 < prev_nll or nll == np.inf or timeout_seconds is not None:
+    # Loop until timeout or gradient norm < 10^-6
+    while True:
 
         # Use learned linear context model to compute utility matrices for each sample
         utility_matrices = B + C * (torch.ones(n, 1) @ mean_choice_set_features[:, None, :])
@@ -691,12 +685,12 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
 
             # print(total_loss)
 
-            if timeout_seconds is not None:
-                if time.time() > start_time + timeout_seconds:
+            if timeout_min is not None:
+                if time.time() - start_time > timeout_min * 60:
                     break
 
-        if timeout_seconds is not None:
-            if time.time() > start_time + timeout_seconds:
+        if timeout_min is not None:
+            if time.time() - start_time > timeout_min * 60:
                 break
 
         B = Q.B.clone().detach()
@@ -706,13 +700,19 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
         model.slopes.data = C
         model.weights.data = torch.log(alpha)
 
-        prev_nll = nll
-        nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum').item()
-
-        # print(nll)
+        nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum')
+        # print('Loss:', nll.item())
 
         losses.append(nll)
         iter_times.append(time.time() - start_time)
+
+        model.zero_grad()
+        nll.backward()
+        grad_norm = torch.cat(
+            [model.intercepts.grad.flatten(), model.slopes.grad.flatten(), model.weights.grad.flatten()], dim=0).norm(
+            p=2).item()
+        if grad_norm < 10 ** -6:
+            break
 
     if detailed_return:
         return model, losses, iter_times

@@ -394,11 +394,8 @@ def l1_regularization_grid_search_helper(args):
 
 
 def l1_regularization_grid_search(datasets, method):
-
     reg_params = [0, 0.001, 0.005, 0.01, 0.05, 0.1]
-
     params = [(dataset, reg_param, method) for dataset in datasets for reg_param in reg_params]
-
     pool = Pool(30)
 
     for _ in tqdm(pool.imap_unordered(l1_regularization_grid_search_helper, params), total=len(params)):
@@ -439,46 +436,36 @@ def all_experiments(datasets):
     pool.join()
 
 
-def time_em(dataset, init_model=None):
-    torch.random.manual_seed(0)
-    np.random.seed(0)
-
-    lrs = [0.01]
-    num_epochs = [100]
-
-    print('Running EM for', dataset.name)
+def em_grid_search_helper(args):
+    dataset, lr, epochs = args
     graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
 
+    torch.random.manual_seed(0)
+    np.random.seed(0)
+    model, losses, times = context_mixture_em(all_data, dataset.num_features, lr=lr, epochs=epochs, detailed_return=True)
+
+    return args, (model, losses, times)
+
+
+def em_grid_search(datasets):
+    lrs = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]
+    epochs = [5, 10, 50, 100]
+
+    params = {(dataset, lr, epoch) for dataset in datasets for lr in lrs for epoch in epochs}
+
     results = dict()
-    for lr in lrs:
-        for epochs in num_epochs:
-            model, losses, times = context_mixture_em(all_data, dataset.num_features, lr=lr, epochs=epochs, detailed_return=True, timeout_seconds=180, initialize_from=init_model)
-            results[lr, epochs] = losses, times
+    pool = Pool(30)
 
-            # plt.plot(times, losses)
-            # plt.title(f'{lr}, {epochs}')
-            # plt.show()
-            # plt.close()
+    for args, losses in tqdm(pool.imap_unordered(em_grid_search_helper, params), total=len(params)):
+        results[args] = losses
 
-    # with open(f'{dataset.name}_em_timing.pickle', 'wb') as f:
-    #     pickle.dump(results, f)
-
-
-def time_all_em(datasets):
-    pool = Pool(len(datasets))
-    pool.map(time_em, datasets)
     pool.close()
     pool.join()
 
-    all_results = dict()
-
-    for dataset in datasets:
-        with open(f'{dataset.name}_em_timing.pickle', 'rb') as f:
-            all_results[dataset] = pickle.load(f)
-
-    with open(f'all_datasets_em_timing.pickle', 'wb') as f:
-        pickle.dump(all_results, f)
+    filename = f'{CONFIG_DIR}/em_lr_epoch_settings.pickle'
+    with open(filename, 'wb') as f:
+        pickle.dump((results, datasets, lrs, epochs), f)
 
 
 def check_lcl_identifiability(datasets):
@@ -512,14 +499,16 @@ def check_lcl_identifiability(datasets):
 if __name__ == '__main__':
     methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
 
+    em_grid_search(ALL_DATASETS)
+
     # check_lcl_identifiability(ALL_DATASETS)
 
-    validation_loss_grid_search(ALL_DATASETS, methods, update=False)
-    train_data_training(ALL_DATASETS, methods)
+    # validation_loss_grid_search(ALL_DATASETS, methods, update=False)
+    # train_data_training(ALL_DATASETS, methods)
 
-    learning_rate_grid_search(ALL_DATASETS, methods, update=False)
-    l1_regularization_grid_search(ALL_DATASETS, FeatureCDM)
-    l1_regularization_grid_search(ALL_DATASETS, FeatureContextMixture)
+    # learning_rate_grid_search(ALL_DATASETS, methods, update=False)
+    # l1_regularization_grid_search(ALL_DATASETS, FeatureCDM)
+    # l1_regularization_grid_search(ALL_DATASETS, FeatureContextMixture)
 
     # all_experiments(ALL_DATASETS)
 
