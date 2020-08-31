@@ -703,7 +703,7 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
         nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum')
         # print('Loss:', nll.item())
 
-        losses.append(nll)
+        losses.append(nll.item())
         iter_times.append(time.time() - start_time)
 
         model.zero_grad()
