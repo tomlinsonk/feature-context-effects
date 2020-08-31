@@ -524,7 +524,7 @@ def toy_example():
     print(model.beta)
 
 
-def train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=True):
+def train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=True, timeout_min=60):
     device = torch.device('cpu')
     torch.set_num_threads(1)
 
@@ -542,12 +542,16 @@ def train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats
     train_accs = []
     val_losses = []
     val_accs = []
+    start_time = time.time()
 
     for epoch in tqdm(range(500)):
         train_loss = 0
         train_count = 0
         train_correct = 0
         total_loss = 0
+
+        if time.time() - start_time > timeout_min * 60:
+            break
 
         for batch in train_data_loader:
             choices = batch[-1]

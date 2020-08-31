@@ -1225,9 +1225,9 @@ if __name__ == '__main__':
 
     # context_effects_from_data(ExpediaDataset)
 
-    # make_likelihood_table(all_datasets)
+    make_likelihood_table(datasets.ALL_DATASETS)
     # make_big_likelihood_table(all_datasets)
-    compare_em_to_sgd(datasets.ALL_DATASETS)
+    # compare_em_to_sgd(datasets.ALL_DATASETS)
 
     # plot_validation_grid_search(all_datasets)
 
@@ -1255,8 +1255,8 @@ if __name__ == '__main__':
     # visualize_context_effects_l1_reg(network_datasets, FeatureContextMixture)
 
     # visualize_context_effects(network_datasets)
-    # compute_all_accuracies(all_datasets)
-    # make_accuracy_table(all_datasets)
+    compute_all_accuracies(datasets.ALL_DATASETS)
+    make_accuracy_table(datasets.ALL_DATASETS)
 
     # plot_all_accuracies(all_datasets)
     # plot_general_choice_dataset_accuracies(ExpediaDataset)
