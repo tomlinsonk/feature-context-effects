@@ -499,6 +499,11 @@ def check_lcl_identifiability(datasets):
 if __name__ == '__main__':
     methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
 
+    # Fix for RuntimeError: received 0 items of ancdata (https://github.com/pytorch/pytorch/issues/973)
+    import resource
+    rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE, (2048, rlimit[1]))
+
     em_grid_search(ALL_DATASETS)
 
     # check_lcl_identifiability(ALL_DATASETS)
