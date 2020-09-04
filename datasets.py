@@ -3,6 +3,7 @@ import itertools
 import os
 import pickle
 import random
+from zipfile import ZipFile
 
 import numpy as np
 import scipy
@@ -23,6 +24,7 @@ class Dataset(ABC):
 
     name = ''
     num_features = 6
+    feature_names = ['in-degree', 'shared neighbors', 'reciprocal weight', 'send recency', 'receive recency', 'reciprocal recency']
 
     @classmethod
     def load(cls):
@@ -134,8 +136,8 @@ class Dataset(ABC):
                                       not graph.has_edge(sender, node)]
 
                         # Features: log in-degree, log num shared neighbors, log 1+ reciprocal weight,
-                        # log(2+time since outgoing edge from target), log(2+time since incoming edge to target),
-                        # log(2+time since target -> chooser interaction)
+                        # 1 / log(2+time since outgoing edge from target), 1 / log(2+time since incoming edge to target),
+                        # 1 / log(2+time since target -> chooser interaction)
 
                         choice_set_features = [[np.log(graph.in_degree(node)),
                                                 np.log(len(set(graph.successors(node)).union(set(graph.predecessors(node))).intersection(sender_neighbors))),
@@ -212,6 +214,43 @@ class Dataset(ABC):
         min_lr_idx, min_wd_idx = np.unravel_index(np.argmin(loss_grid), loss_grid.shape)
 
         return lrs[min_lr_idx], wds[min_wd_idx]
+
+    @classmethod
+    def pickle_to_zip(cls):
+        zip_fname = f'{cls.name}.zip'
+        features_fname = f'{DATA_DIR}/txt-files/{cls.name}-features.txt'
+        choices_fname = f'{DATA_DIR}/txt-files/{cls.name}-choices.txt'
+        choice_sets_fname = f'{DATA_DIR}/txt-files/{cls.name}-choice-sets.txt'
+        readme_fname = f'{DATA_DIR}/txt-files/{cls.name}-README.txt'
+
+        # graph, train_data, val_data, test_data = cls.load()
+        # data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(len(train_data))]
+        # histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = data
+
+        # with open(choice_sets_fname, 'w') as f:
+        #     f.write('\n'.join(';'.join(' '.join(f'{x.item()}' for x in item) for item in choice_set_features[i, :choice_set_lengths[i]]) for i in range(len(choices))))
+        #
+        # with open(choices_fname, 'w') as f:
+        #     f.write('\n'.join(f'{x.item()}' for x in choices))
+
+        # with open(features_fname, 'w') as f:
+        #     f.write(', '.join(cls.feature_names))
+        #
+        # with open(readme_fname, 'w') as f:
+        #     f.write('This dataset contains three files:\n'
+        #             f'1. {cls.name}-choice-sets.txt\n'
+        #             f'2. {cls.name}-choices.txt\n'
+        #             f'3. {cls.name}-features.txt\n'
+        #             'Each line in file 1 is a single choice instance. Each item in the choice set\n'
+        #             'is represented by numerical features (space separated) and each item is \n'
+        #             'semicolon-separated. The index of the item selected from each choice set is in\n'
+        #             'file 2. The names of the features are in file 3.')
+
+        with ZipFile(zip_fname, 'w') as z:
+            z.write(features_fname, os.path.basename(features_fname))
+            z.write(choices_fname, os.path.basename(choices_fname))
+            z.write(choice_sets_fname, os.path.basename(choice_sets_fname))
+            z.write(readme_fname, os.path.basename(readme_fname))
 
 
 class EmailEnronDataset(Dataset):
@@ -352,7 +391,7 @@ class FacebookWallDataset(Dataset):
 
 
 class EmailW3CDataset(Dataset):
-    name = 'email-W3C'
+    name = 'email-w3c'
 
     @classmethod
     def load_into_pickle(cls, file_name):
@@ -685,8 +724,8 @@ class SyntheticMNLDataset(Dataset):
             pickle.dump((graph, train_data, val_data, test_data), f, protocol=4)
 
 
-class SyntheticCDMDataset(Dataset):
-    name = 'synthetic-cdm'
+class SyntheticLCLDataset(Dataset):
+    name = 'synthetic-lcl'
 
     @classmethod
     def generate(cls):
@@ -1095,7 +1134,8 @@ class CarAltDataset(Dataset):
             pickle.dump((nx.DiGraph(), train_data, val_data, test_data), f, protocol=4)
 
 
-SYNTHETIC_DATASETS = [SyntheticMNLDataset, SyntheticCDMDataset]
+
+SYNTHETIC_DATASETS = [SyntheticMNLDataset, SyntheticLCLDataset]
 REAL_NETWORK_DATASETS = [
     WikiTalkDataset, RedditHyperlinkDataset,
     BitcoinAlphaDataset, BitcoinOTCDataset,
@@ -1107,13 +1147,14 @@ REAL_GENERAL_DATASETS = [DistrictDataset, DistrictSmartDataset, ExpediaDataset, 
                     CarAltDataset]
 
 NETWORK_DATASETS = SYNTHETIC_DATASETS + REAL_NETWORK_DATASETS
-ALL_DATASETS = NETWORK_DATASETS + REAL_GENERAL_DATASETS
+ALL_DATASETS = REAL_GENERAL_DATASETS + NETWORK_DATASETS
 
 
 if __name__ == '__main__':
-
     for dataset in ALL_DATASETS:
-        dataset.print_stats()
+        if dataset == DistrictSmartDataset:
+            continue
+        dataset.pickle_to_zip()
 
 
 

@@ -90,136 +90,21 @@ class Embedding(nn.Module):
         return self.weight[x]
 
 
-class HistoryCDM(nn.Module):
+class MNL(nn.Module):
 
-    name = 'history_cdm'
-
-    def __init__(self, num_items, dim, beta=0.5, learn_beta=False):
-        super().__init__()
-
-        self.num_items = num_items
-        self.dim = dim
-        self.beta = nn.Parameter(torch.tensor([beta]), requires_grad=learn_beta)
-        self.learn_beta = learn_beta
-
-        self.history_embedding = Embedding(
-            num=self.num_items + 1,
-            dim=self.dim,
-            pad_idx=self.num_items
-        )
-
-        self.target_embedding = Embedding(
-            num=self.num_items + 1,
-            dim=self.dim,
-            pad_idx=self.num_items
-        )
-
-        self.context_embedding = Embedding(
-            num=self.num_items + 1,
-            dim=self.dim,
-            pad_idx=self.num_items
-        )
-
-    def forward(self, histories, history_lengths, choice_sets, choice_set_lengths):
-        batch_size, max_choice_set_len = choice_sets.size()
-        _, max_history_len = histories.size()
-
-        history_vecs = self.history_embedding(histories)
-        context_vecs = self.context_embedding(choice_sets)
-        target_vecs = self.target_embedding(choice_sets)
-
-        context_sums = context_vecs.sum(1, keepdim=True) - context_vecs
-        history_weight = torch.pow(self.beta.repeat(max_history_len), torch.arange(0, max_history_len))[:, None]
-        weighted_history_sums = (history_weight * history_vecs).sum(1, keepdim=True)
-
-        utilities = (target_vecs * (context_sums + weighted_history_sums)).sum(2)
-        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
-
-        return nn.functional.log_softmax(utilities, 1)
-
-    def loss(self, y_pred, y):
-        """
-        The error in inferred log-probabilities given observations
-        :param y_pred: log(choice probabilities)
-        :param y: observed choices
-        :return: the loss
-        """
-
-        return nn.functional.nll_loss(y_pred, y)
-
-
-class HistoryMNL(nn.Module):
-
-    name = 'history_mnl'
-
-    def __init__(self, num_items, dim, beta=0.5, learn_beta=False):
-        super().__init__()
-
-        self.num_items = num_items
-        self.dim = dim
-        self.beta = nn.Parameter(torch.tensor([beta]), requires_grad=learn_beta)
-        self.learn_beta = learn_beta
-
-        self.history_embedding = Embedding(
-            num=self.num_items + 1,
-            dim=self.dim,
-            pad_idx=self.num_items
-        )
-
-        self.target_embedding = Embedding(
-            num=self.num_items + 1,
-            dim=self.dim,
-            pad_idx=self.num_items
-        )
-
-        self.page_utilities = Embedding(
-            num=self.num_items + 1,
-            dim=1,
-            pad_idx=self.num_items
-        )
-
-    def forward(self, histories, history_lengths, choice_sets, choice_set_lengths):
-        batch_size, max_choice_set_len = choice_sets.size()
-        _, max_history_len = histories.size()
-
-        history_vecs = self.history_embedding(histories)
-        page_utilities = self.page_utilities(choice_sets)
-        target_vecs = self.target_embedding(choice_sets)
-
-        history_weight = torch.pow(self.beta.repeat(max_history_len), torch.arange(0, max_history_len))[:, None]
-        weighted_history_sums = (history_weight * history_vecs).sum(1, keepdim=True)
-
-        utilities = (target_vecs * weighted_history_sums).sum(2) + page_utilities.squeeze()
-        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
-
-        return nn.functional.log_softmax(utilities, 1)
-
-    def loss(self, y_pred, y):
-        """
-        The error in inferred log-probabilities given observations
-        :param y_pred: log(choice probabilities)
-        :param y: observed choices
-        :return: the loss
-        """
-
-        return nn.functional.nll_loss(y_pred, y)
-
-
-class FeatureMNL(nn.Module):
-
-    name = 'feature_mnl'
+    name = 'mnl'
 
     def __init__(self, num_features, device=torch.device('cpu')):
         super().__init__()
 
         self.num_features = num_features
-        self.utilities = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
+        self.theta = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
         self.device = device
 
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
 
-        utilities = (self.utilities * choice_set_features).sum(-1)
+        utilities = (self.theta * choice_set_features).sum(-1)
 
         utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
 
@@ -236,16 +121,16 @@ class FeatureMNL(nn.Module):
         return nn.functional.nll_loss(y_pred, y)
 
 
-class FeatureCDM(nn.Module):
+class LCL(nn.Module):
 
-    name = 'feature_cdm'
+    name = 'lcl'
 
     def __init__(self, num_features, device=torch.device('cpu'), l1_reg=0):
         super().__init__()
 
         self.num_features = num_features
-        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
-        self.contexts = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
+        self.theta = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
+        self.A = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
 
         self.device = device
         self.l1_reg = l1_reg
@@ -255,9 +140,9 @@ class FeatureCDM(nn.Module):
 
         context_feature_sums = (choice_set_features.sum(1, keepdim=True) - choice_set_features)
 
-        context_times_feature = (self.contexts.T @ choice_set_features.unsqueeze(3)).squeeze()
+        context_times_feature = (self.A.T @ choice_set_features.unsqueeze(3)).squeeze()
 
-        utilities = ((context_feature_sums * context_times_feature).sum(-1)) / choice_set_lengths[:, None] + (self.weights * choice_set_features).sum(-1)
+        utilities = ((context_feature_sums * context_times_feature).sum(-1)) / choice_set_lengths[:, None] + (self.theta * choice_set_features).sum(-1)
 
         utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
         return nn.functional.log_softmax(utilities, 1)
@@ -270,20 +155,25 @@ class FeatureCDM(nn.Module):
         :return: the loss
         """
 
-        return nn.functional.nll_loss(y_pred, y) + self.l1_reg * self.contexts.norm(1)
+        return nn.functional.nll_loss(y_pred, y) + self.l1_reg * self.A.norm(1)
 
 
-class FeatureContextMixture(nn.Module):
+class DLCL(nn.Module):
 
-    name = 'feature_context_mixture'
+    name = 'dlcl'
 
     def __init__(self, num_features, device=torch.device('cpu'), l1_reg=0):
         super().__init__()
 
         self.num_features = num_features
-        self.slopes = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
-        self.intercepts = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
-        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
+
+        # Context effect slopes
+        self.A = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
+
+        # Context effect intercepts
+        self.B = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
+
+        self.mixture_weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
 
         self.device = device
         self.l1_reg = l1_reg
@@ -295,7 +185,7 @@ class FeatureContextMixture(nn.Module):
         mean_choice_set_features = choice_set_features.sum(1) / choice_set_lengths[:, None]
 
         # Use learned linear context model to compute utility matrices for each sample
-        utility_matrices = self.intercepts + self.slopes * (torch.ones(self.num_features, 1) @ mean_choice_set_features[:, None, :])
+        utility_matrices = self.B + self.A * (torch.ones(self.num_features, 1) @ mean_choice_set_features[:, None, :])
 
         # Compute utility of each item under each feature MNL
         utilities = choice_set_features @ utility_matrices
@@ -310,7 +200,7 @@ class FeatureContextMixture(nn.Module):
         # return torch.logsumexp(log_probs + torch.log(self.weights / self.weights.sum()), 2)
 
         # So, I'm instead using the fix in the issue linked above
-        return logsumexp(log_probs + torch.log_softmax(self.weights, 0), 2)
+        return logsumexp(log_probs + torch.log_softmax(self.mixture_weights, 0), 2)
 
     def loss(self, y_pred, y):
         """
@@ -320,19 +210,19 @@ class FeatureContextMixture(nn.Module):
         :return: the loss
         """
 
-        return nn.functional.nll_loss(y_pred, y) + self.l1_reg * self.slopes.norm(1)
+        return nn.functional.nll_loss(y_pred, y) + self.l1_reg * self.A.norm(1)
 
 
-class MNLMixture(nn.Module):
+class MixedLogit(nn.Module):
 
-    name = 'mnl_mixture'
+    name = 'mixed_logit'
 
     def __init__(self, num_features, device=torch.device('cpu')):
         super().__init__()
 
         self.num_features = num_features
-        self.utilities = nn.Parameter(torch.rand(self.num_features, self.num_features), requires_grad=True)
-        self.weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
+        self.thetas = nn.Parameter(torch.rand(self.num_features, self.num_features), requires_grad=True)
+        self.mixture_weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
 
         self.device = device
 
@@ -340,7 +230,7 @@ class MNLMixture(nn.Module):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
 
         # Compute utility of each item under each MNL
-        utilities = choice_set_features @ self.utilities.T
+        utilities = choice_set_features @ self.thetas.T
         utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
 
         # Compute MNL log-probs for each feature
@@ -352,100 +242,7 @@ class MNLMixture(nn.Module):
         # return torch.logsumexp(log_probs + torch.log(self.weights / self.weights.sum()), 2)
 
         # So, I'm instead using the fix in the issue linked above
-        return logsumexp(log_probs + torch.log_softmax(self.weights, 0), 2)
-
-    def loss(self, y_pred, y):
-        """
-        The error in inferred log-probabilities given observations
-        :param y_pred: log(choice probabilities)
-        :param y: observed choices
-        :return: the loss
-        """
-
-        return nn.functional.nll_loss(y_pred, y)
-
-
-class FeatureSelector(nn.Module):
-    name = 'feature_selector'
-
-    def __init__(self, feature_index):
-        super().__init__()
-
-        self.feature_index = feature_index
-
-    def forward(self, choice_set_features, choice_set_lengths):
-        batch_size, max_choice_set_len, num_feats = choice_set_features.size()
-        utilities = choice_set_features[:, :, self.feature_index]
-        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
-        return nn.functional.log_softmax(utilities, 1)
-
-    def loss(self, y_pred, y):
-        """
-        The error in inferred log-probabilities given observations
-        :param y_pred: log(choice probabilities)
-        :param y: observed choices
-        :return: the loss
-        """
-
-        return nn.functional.nll_loss(y_pred, y)
-
-
-class RandomSelector(nn.Module):
-    name = 'random_selector'
-
-    def __init__(self, _):
-        super().__init__()
-
-    def forward(self, choice_set_features, choice_set_lengths):
-        batch_size, max_choice_set_len, num_feats = choice_set_features.size()
-        utilities = torch.rand(choice_set_features.size()[:-1])
-        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
-
-        return nn.functional.log_softmax(utilities, 1)
-
-    def loss(self, y_pred, y):
-        """
-        The error in inferred log-probabilities given observations
-        :param y_pred: log(choice probabilities)
-        :param y: observed choices
-        :return: the loss
-        """
-
-        return nn.functional.nll_loss(y_pred, y)
-
-
-class LSTM(nn.Module):
-
-    name = 'lstm'
-
-    def __init__(self, num_items, dim):
-        super().__init__()
-
-        self.num_items = num_items
-        self.dim = dim
-
-        self.item_embedding = Embedding(
-            num=self.num_items + 1,
-            dim=self.dim,
-            pad_idx=self.num_items
-        )
-
-        self.lstm = nn.LSTM(dim, dim, batch_first=True)
-
-    def forward(self, histories, history_lengths, choice_sets, choice_set_lengths):
-        batch_size, max_choice_set_len = choice_sets.size()
-        _, max_history_len = histories.size()
-
-        history_vecs = self.item_embedding(histories)
-        packed_histories = pack_padded_sequence(history_vecs, history_lengths, batch_first=True)
-        packed_output, (h_n, c_n) = self.lstm(packed_histories)
-
-        choice_set_vecs = self.item_embedding(choice_sets)
-
-        utilities = (choice_set_vecs * h_n[-1][:, None, :]).sum(2)
-        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
-
-        return nn.functional.log_softmax(utilities, 1)
+        return logsumexp(log_probs + torch.log_softmax(self.mixture_weights, 0), 2)
 
     def loss(self, y_pred, y):
         """
@@ -475,53 +272,17 @@ class EMAlgorithmQ(nn.Module):
     def forward(self, choice_set_features, choice_set_lengths, choices, indices):
         batch_size, max_choice_set_len, _ = choice_set_features.size()
 
-        # Use linear context model to compute utility matrices for each sample
-        utility_matrices = self.B + self.C * (torch.ones(self.num_features, 1) @ self.mean_cs_features[indices, None, :])
+        # Use linear context model to compute preference matrices for each sample
+        preference_matrices = self.B + self.C * (torch.ones(self.num_features, 1) @ self.mean_cs_features[indices, None, :])
 
         # Compute utility of each item under each feature MNL
-        utilities = choice_set_features @ utility_matrices
+        utilities = choice_set_features @ preference_matrices
         utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
 
         # Compute MNL log-probs for each feature
         log_probs = nn.functional.log_softmax(utilities, 1)[torch.arange(batch_size), choices]
 
         return - (self.r[indices] * log_probs).sum()
-
-
-def toy_example():
-    n = 4
-    histories = torch.tensor(
-        [[0, n, n, n],
-         [3, 0, n, n],
-         [1, n, n, n],
-         [2, 1, n, n],
-         [3, 2, 1, n]]
-    )
-
-    history_lengths = torch.tensor([1, 2, 1, 2, 3])
-
-    choice_sets = torch.tensor(
-        [[3, 1, n, n],
-         [2, 0, n, n],
-         [2, 1, 3, 0],
-         [1, 3, n, n],
-         [0, 1, 2, n]]
-    )
-
-    choice_set_lengths = torch.tensor([2, 2, 4, 2, 3])
-
-    # Indices into choice_sets
-    choices = torch.tensor([0, 0, 0, 1, 2])
-
-    train_data = histories, history_lengths, choice_sets, choice_set_lengths, choices
-
-    model, train_losses, train_accs, val_losses, val_accs = train_history_mnl(n, train_data, train_data, dim=3, lr=0.005, weight_decay=0)
-    plt.plot(range(500), train_losses)
-    plt.plot(range(500), train_accs)
-
-    plt.show()
-
-    print(model.beta)
 
 
 def train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=True, timeout_min=60):
@@ -598,23 +359,23 @@ def train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats
     return model, train_losses, train_accs, val_losses, val_accs
 
 
-def train_feature_mnl(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
-    model = FeatureMNL(num_features)
+def train_mnl(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
+    model = MNL(num_features)
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 
-def train_feature_cdm(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False, l1_reg=0):
-    model = FeatureCDM(num_features, l1_reg=l1_reg)
+def train_lcl(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False, l1_reg=0):
+    model = LCL(num_features, l1_reg=l1_reg)
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 
-def train_feature_context_mixture(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False, l1_reg=0):
-    model = FeatureContextMixture(num_features, l1_reg=l1_reg)
+def train_dlcl(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False, l1_reg=0):
+    model = DLCL(num_features, l1_reg=l1_reg)
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 
-def train_mnl_mixture(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
-    model = MNLMixture(num_features)
+def train_mixed_logit(train_data, val_data, num_features, lr=1e-4, weight_decay=1e-4, compute_val_stats=False):
+    model = MixedLogit(num_features)
     return train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=compute_val_stats)
 
 
@@ -630,9 +391,9 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
     alpha = torch.ones(n, requires_grad=False).float() / n
 
     if initialize_from is not None:
-        B = initialize_from.intercepts.clone().detach()
-        C = initialize_from.slopes.clone().detach()
-        alpha = torch.softmax(initialize_from.weights.clone().detach(), 0)
+        B = initialize_from.B.clone().detach()
+        C = initialize_from.A.clone().detach()
+        alpha = torch.softmax(initialize_from.thetas.clone().detach(), 0)
 
     # Compute mean of each feature over each choice set
     batch_size, max_choice_set_len, _ = choice_set_features.size()
@@ -645,11 +406,11 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
     iter_times = []
     losses = []
 
-    model = FeatureContextMixture(num_features)
+    model = DLCL(num_features)
 
-    model.intercepts.data = B
-    model.slopes.data = C
-    model.weights.data = torch.log(alpha)
+    model.B.data = B
+    model.A.data = C
+    model.mixture_weights.data = torch.log(alpha)
 
     # Loop until timeout or gradient norm < 10^-6
     while True:
@@ -696,9 +457,9 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
         B = Q.B.clone().detach()
         C = Q.C.clone().detach()
 
-        model.intercepts.data = B
-        model.slopes.data = C
-        model.weights.data = torch.log(alpha)
+        model.B.data = B
+        model.A.data = C
+        model.mixture_weights.data = torch.log(alpha)
 
         nll = torch.nn.functional.nll_loss(model(choice_set_features, choice_set_lengths), choices, reduction='sum')
         # print('Loss:', nll.item())
@@ -709,7 +470,7 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
         model.zero_grad()
         nll.backward()
         grad_norm = torch.cat(
-            [model.intercepts.grad.flatten(), model.slopes.grad.flatten(), model.weights.grad.flatten()], dim=0).norm(
+            [model.B.grad.flatten(), model.A.grad.flatten(), model.mixture_weights.grad.flatten()], dim=0).norm(
             p=2).item()
         if grad_norm < 10 ** -6:
             break
@@ -718,6 +479,34 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
         return model, losses, iter_times
 
     return model
+
+
+
+def toy_example():
+    x_1 = [-1, 2, -1]
+    x_2 = [-1, 1, -2]
+    x_3 = [1, 0, 1]
+    x_4 = [1, -3, 2]
+    z = [0, 0, 0]
+
+    choice_set_features = torch.tensor(
+        [[x_1, x_2, z, z],
+         [x_1, x_3, z, z],
+         [x_1, x_2, x_3, x_4],
+         [x_2, x_3, z, z],
+         [x_1, x_4, z, z],
+         [x_2, x_3, x_4, z]]
+    )
+
+    choice_set_lengths = torch.tensor([2, 2, 1, 2, 2, 3])
+
+    # Indices into choice_sets
+    choices = torch.tensor([0, 0, 3, 1, 0, 2])
+
+    train_data = choice_set_features, choice_set_lengths, choices
+
+    model, train_losses, train_accs, val_losses, val_accs = train_mnl(train_data, train_data, num_features=3, lr=0.1, weight_decay=0.001)
+    print(model.thetas)
 
 
 if __name__ == '__main__':

@@ -9,12 +9,12 @@ import torch
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from datasets import ALL_DATASETS
+from datasets import ALL_DATASETS, DistrictDataset
 
-from models import train_feature_mnl, FeatureMNL, FeatureCDM, train_feature_cdm, FeatureContextMixture, train_feature_context_mixture, context_mixture_em, \
-    MNLMixture, train_mnl_mixture
+from models import train_mnl, MNL, LCL, train_lcl, DLCL, train_dlcl, context_mixture_em, \
+    MNLMixture, train_mixed_logit
 
-training_methods = {FeatureMNL: train_feature_mnl, FeatureCDM: train_feature_cdm, FeatureContextMixture: train_feature_context_mixture, MNLMixture: train_mnl_mixture}
+training_methods = {MNL: train_mnl, LCL: train_lcl, DLCL: train_dlcl, MNLMixture: train_mixed_logit}
 
 CONFIG_DIR = 'config'
 
@@ -259,8 +259,8 @@ def learn_binned_mnl(dataset):
                 continue
 
             bin_data = [torch.tensor(choice_set_features[bin_idx]), torch.tensor(choice_set_lengths[bin_idx]), torch.tensor(choices[bin_idx])]
-            mnl, train_losses, _, _, _ = train_feature_mnl(bin_data, bin_data, n_feats, lr=0.01, weight_decay=0.001)
-            mnl_utilities[bin] = mnl.utilities.detach().numpy()
+            mnl, train_losses, _, _, _ = train_mnl(bin_data, bin_data, n_feats, lr=0.01, weight_decay=0.001)
+            mnl_utilities[bin] = mnl.thetas.detach().numpy()
             bin_choice_set_log_lengths[bin] = np.mean(np.log(choice_set_lengths[bin_idx]))
             bin_losses[bin] = torch.nn.functional.nll_loss(mnl(*bin_data[:-1]), bin_data[-1], reduction='sum').item()
 
@@ -497,14 +497,16 @@ def check_lcl_identifiability(datasets):
 
 
 if __name__ == '__main__':
-    methods = [MNLMixture, FeatureMNL, FeatureContextMixture, FeatureCDM]
+    methods = [MNLMixture, MNL, DLCL, LCL]
 
     # Fix for RuntimeError: received 0 items of ancdata (https://github.com/pytorch/pytorch/issues/973)
     import resource
     rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (2048, rlimit[1]))
 
-    em_grid_search(ALL_DATASETS)
+    l1_regularization_grid_search_helper((DistrictDataset, 0, LCL))
+
+    # em_grid_search(ALL_DATASETS)
 
     # check_lcl_identifiability(ALL_DATASETS)
 
@@ -512,8 +514,8 @@ if __name__ == '__main__':
     # train_data_training(ALL_DATASETS, methods)
 
     # learning_rate_grid_search(ALL_DATASETS, methods, update=False)
-    # l1_regularization_grid_search(ALL_DATASETS, FeatureCDM)
-    # l1_regularization_grid_search(ALL_DATASETS, FeatureContextMixture)
+    # l1_regularization_grid_search(ALL_DATASETS, LCL)
+    # l1_regularization_grid_search(ALL_DATASETS, DLCL)
 
     # all_experiments(ALL_DATASETS)
 
