@@ -536,7 +536,7 @@ def biggest_context_effects(datasets, num=5):
 
 
 if __name__ == '__main__':
-    methods = [MNLMixture, MNL, DLCL, LCL]
+    methods = [MixedLogit, MNL, DLCL, LCL]
 
     # Fix for RuntimeError: received 0 items of ancdata (https://github.com/pytorch/pytorch/issues/973)
     import resource
