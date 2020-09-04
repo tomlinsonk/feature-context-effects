@@ -11,7 +11,8 @@ from tqdm import tqdm
 
 from datasets import ALL_DATASETS, DistrictDataset, CarAltDataset, ExpediaDataset, SushiDataset
 
-from models import train_mnl, MNL, LCL, train_lcl, DLCL, train_dlcl, context_mixture_em, train_mixed_logit, MixedLogit
+from models import train_mnl, MNL, LCL, train_lcl, DLCL, train_dlcl, context_mixture_em, train_mixed_logit, MixedLogit, \
+    train_model
 
 training_methods = {MNL: train_mnl, LCL: train_lcl, DLCL: train_dlcl, MixedLogit: train_mixed_logit}
 
@@ -501,7 +502,7 @@ def biggest_context_effect_helper(args):
     graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
 
-    model, train_losses, _, _, _ = train_lcl(LCL(dataset.num_features), all_data, all_data,
+    model, train_losses, _, _, _ = train_model(LCL(dataset.num_features), all_data, all_data,
                                                         dataset.best_lr(LCL), 0.001, False, 60, (row, col))
 
     return (dataset, index), (row, col, A_pq, model.A[row, col], train_losses)
