@@ -9,7 +9,7 @@ import torch
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from datasets import ALL_DATASETS, DistrictDataset
+from datasets import ALL_DATASETS, DistrictDataset, CarAltDataset, ExpediaDataset, SushiDataset
 
 from models import train_mnl, MNL, LCL, train_lcl, DLCL, train_dlcl, context_mixture_em, \
     MNLMixture, train_mixed_logit
@@ -496,6 +496,46 @@ def check_lcl_identifiability(datasets):
         print(f'\\textsc{{{dataset.name}}} & {kron_text} & {choice_set_text}\\\\')
 
 
+def biggest_context_effect_helper(args):
+    dataset, index, row, col, A_pq = args
+
+    graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
+    all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
+
+    model, train_losses, _, _, _ = train_lcl(LCL(dataset.num_features), all_data, all_data,
+                                                        dataset.best_lr(LCL), 0.001, False, 60, (row, col))
+
+    return (dataset, index), (row, col, A_pq, model.A[row, col], train_losses)
+
+
+def biggest_context_effects(datasets, num=5):
+    params = []
+
+    for dataset in datasets:
+        model = LCL(dataset.num_features)
+        model.load_state_dict(torch.load(f'params/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt'))
+        contexts = model.A.data.numpy()
+
+        max_abs_idx = np.dstack(np.unravel_index(np.argsort(-abs(contexts).ravel()), contexts.shape))[0]
+
+        for index, (row, col) in enumerate(max_abs_idx[:num]):
+            params.append((dataset, index, row, col, contexts[row, col]))
+
+    results = dict()
+    pool = Pool(30)
+
+    for key, val in tqdm(pool.imap_unordered(biggest_context_effect_helper, params), total=len(params)):
+        results[key] = val
+
+    pool.close()
+    pool.join()
+
+    filename = f'biggest_context_effects.pickle'
+    with open(filename, 'wb') as f:
+        pickle.dump(results, f)
+
+
+
 if __name__ == '__main__':
     methods = [MNLMixture, MNL, DLCL, LCL]
 
@@ -504,7 +544,9 @@ if __name__ == '__main__':
     rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (2048, rlimit[1]))
 
-    l1_regularization_grid_search_helper((DistrictDataset, 0, LCL))
+    biggest_context_effects([SushiDataset, ExpediaDataset, CarAltDataset])
+
+    # l1_regularization_grid_search_helper((DistrictDataset, 0, LCL))
 
     # em_grid_search(ALL_DATASETS)
 

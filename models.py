@@ -285,7 +285,7 @@ class EMAlgorithmQ(nn.Module):
         return - (self.r[indices] * log_probs).sum()
 
 
-def train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=True, timeout_min=60):
+def train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=True, timeout_min=60, only_context_effect=None):
     device = torch.device('cpu')
     torch.set_num_threads(1)
 
@@ -325,6 +325,12 @@ def train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats
 
             optimizer.zero_grad()
             loss.backward()
+
+            # If we only want to train one context effect, zero every other gradient
+            if only_context_effect is not None:
+                tmp = model.A.grad.data[only_context_effect].item()
+                model.A.grad.data.zero_()
+                model.A.grad.data[only_context_effect] = tmp
             optimizer.step()
 
             model.eval()
@@ -479,7 +485,6 @@ def context_mixture_em(train_data, num_features, lr=0.005, epochs=100, detailed_
         return model, losses, iter_times
 
     return model
-
 
 
 def toy_example():

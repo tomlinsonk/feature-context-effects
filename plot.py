@@ -39,48 +39,7 @@ def load_model(Model, n, dim, param_fname):
 
 def load_feature_model(Model, model_param, param_fname):
     model = Model(model_param)
-
-    def lcl_key_transformation(old_key):
-        if old_key == 'weights':
-            return 'theta'
-        elif old_key == 'contexts':
-            return 'A'
-
-        return old_key
-
-    def dlcl_key_transformation(old_key):
-        if old_key == 'slopes':
-            return 'A'
-        elif old_key == 'intercepts':
-            return 'B'
-        elif old_key == 'weights':
-            return 'mixture_weights'
-
-        return old_key
-
-    def mnl_key_transformation(old_key):
-        if old_key == 'utilities':
-            return 'theta'
-        return old_key
-
-    def mixed_logit_key_transformation(old_key):
-        if old_key == 'utilities':
-            return 'thetas'
-        elif old_key == 'weights':
-            return 'mixture_weights'
-        return old_key
-
-    if Model == LCL:
-        rename_state_dict_keys(param_fname, lcl_key_transformation)
-    elif Model == DLCL:
-        rename_state_dict_keys(param_fname, dlcl_key_transformation)
-    elif Model == MNL:
-        rename_state_dict_keys(param_fname, mnl_key_transformation)
-    elif Model == MixedLogit:
-        rename_state_dict_keys(param_fname, mixed_logit_key_transformation)
-
     model.load_state_dict(torch.load(param_fname))
-
     model.eval()
 
     return model
@@ -727,7 +686,8 @@ def visualize_context_effects_l1_reg_general_choice_dataset(dataset, method):
     plt.savefig(f'l1_regularization_{dataset.name}_{method.name}.pdf', bbox_inches='tight')
     plt.close()
 
-def find_biggest_context_effects(dataset, num=5):
+
+def make_biggest_context_effect_table(dataset, num=5):
     print(f'\n\nContext effects in {dataset.name}:')
     model = load_feature_model(LCL, dataset.num_features,
                                f'{PARAM_DIR}/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt')
@@ -736,9 +696,16 @@ def find_biggest_context_effects(dataset, num=5):
 
     max_abs_idx = np.dstack(np.unravel_index(np.argsort(-abs(contexts).ravel()), contexts.shape))[0]
 
+    graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
+    all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
+
     print('Biggest effects in', dataset.name)
     for row, col in max_abs_idx[:num]:
         print(f'\\emph{{{dataset.feature_names[col].lower()}}} on \emph{{{dataset.feature_names[row].lower()}}} & ${contexts[row, col]:.2f}$\\\\')
+
+        model, train_losses, train_accs, _, _ = train_model(LCL(dataset.num_features), all_data, all_data, dataset.best_lr(LCL), 0.001, False, 60, (row, col))
+        print(model.A[row, col], train_losses[-1])
+
 
     print('base uts:')
     for i, name in enumerate(dataset.feature_names):
@@ -774,30 +741,26 @@ def compare_em_to_sgd(datasets):
 
 
 if __name__ == '__main__':
+    make_biggest_context_effect_table(CarAltDataset)
+    make_biggest_context_effect_table(ExpediaDataset)
+    make_biggest_context_effect_table(SushiDataset)
 
-
-
-
-    find_biggest_context_effects(CarAltDataset)
-    find_biggest_context_effects(ExpediaDataset)
-    find_biggest_context_effects(SushiDataset)
-
-    make_likelihood_table(datasets.ALL_DATASETS)
-    make_big_likelihood_table(datasets.ALL_DATASETS)
-    compare_em_to_sgd(datasets.ALL_DATASETS)
-
-    plot_binned_mnl_example()
-
-    lcl_context_effect_tsne(datasets.REAL_NETWORK_DATASETS)
-    dlcl_context_effect_tsne(datasets.REAL_NETWORK_DATASETS)
-
-    visualize_context_effects_l1_reg_general_choice_dataset(SushiDataset, LCL)
-    visualize_context_effects_l1_reg_general_choice_dataset(DistrictSmartDataset, LCL)
-    visualize_context_effects_l1_reg_general_choice_dataset(ExpediaDataset, LCL)
-    visualize_context_effects_l1_reg_general_choice_dataset(CarAltDataset, LCL)
-
-    visualize_context_effects_l1_reg(datasets.NETWORK_DATASETS, LCL)
-    visualize_context_effects_l1_reg(datasets.NETWORK_DATASETS, DLCL)
-
+    # make_likelihood_table(datasets.ALL_DATASETS)
+    # make_big_likelihood_table(datasets.ALL_DATASETS)
+    # compare_em_to_sgd(datasets.ALL_DATASETS)
+    #
+    # plot_binned_mnl_example()
+    #
+    # lcl_context_effect_tsne(datasets.REAL_NETWORK_DATASETS)
+    # dlcl_context_effect_tsne(datasets.REAL_NETWORK_DATASETS)
+    #
+    # visualize_context_effects_l1_reg_general_choice_dataset(SushiDataset, LCL)
+    # visualize_context_effects_l1_reg_general_choice_dataset(DistrictSmartDataset, LCL)
+    # visualize_context_effects_l1_reg_general_choice_dataset(ExpediaDataset, LCL)
+    # visualize_context_effects_l1_reg_general_choice_dataset(CarAltDataset, LCL)
+    #
+    # visualize_context_effects_l1_reg(datasets.NETWORK_DATASETS, LCL)
+    # visualize_context_effects_l1_reg(datasets.NETWORK_DATASETS, DLCL)
+    #
     # compute_all_accuracies(datasets.ALL_DATASETS)
-    make_prediction_table(datasets.ALL_DATASETS)
+    # make_prediction_table(datasets.ALL_DATASETS)
