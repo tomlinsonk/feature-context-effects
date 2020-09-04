@@ -361,7 +361,7 @@ def visualize_context_effects_l1_reg(datasets, method):
         loss_ax.yaxis.tick_right()
 
     plt.savefig(f'l1-regularization-{method.name}.pdf', bbox_inches='tight')
-
+    plt.close()
 
 def lcl_context_effect_tsne(datasets):
     vectors = []
@@ -564,6 +564,7 @@ def plot_binned_mnl_example():
     plt.subplots_adjust(wspace=0, hspace=0)
 
     plt.savefig('context-effect-example.pdf', bbox_inches='tight')
+    plt.close()
 
 
 def make_likelihood_table(all_datasets):
@@ -724,7 +725,7 @@ def visualize_context_effects_l1_reg_general_choice_dataset(dataset, method):
     loss_ax.yaxis.tick_right()
 
     plt.savefig(f'l1_regularization_{dataset.name}_{method.name}.pdf', bbox_inches='tight')
-
+    plt.close()
 
 def find_biggest_context_effects(dataset, num=5):
     print(f'\n\nContext effects in {dataset.name}:')
