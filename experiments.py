@@ -505,7 +505,7 @@ def biggest_context_effect_helper(args):
     model, train_losses, _, _, _ = train_model(LCL(dataset.num_features), all_data, all_data,
                                                         dataset.best_lr(LCL), 0.001, False, 60, (row, col))
 
-    return (dataset, index), (row, col, A_pq, model.A[row, col], train_losses)
+    return (dataset, index), (row, col, A_pq, model.A[row, col].item(), train_losses)
 
 
 def biggest_context_effects(datasets, num=5):
