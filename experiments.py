@@ -11,10 +11,9 @@ from tqdm import tqdm
 
 from datasets import ALL_DATASETS, DistrictDataset, CarAltDataset, ExpediaDataset, SushiDataset
 
-from models import train_mnl, MNL, LCL, train_lcl, DLCL, train_dlcl, context_mixture_em, \
-    MNLMixture, train_mixed_logit
+from models import train_mnl, MNL, LCL, train_lcl, DLCL, train_dlcl, context_mixture_em, train_mixed_logit, MixedLogit
 
-training_methods = {MNL: train_mnl, LCL: train_lcl, DLCL: train_dlcl, MNLMixture: train_mixed_logit}
+training_methods = {MNL: train_mnl, LCL: train_lcl, DLCL: train_dlcl, MixedLogit: train_mixed_logit}
 
 CONFIG_DIR = 'config'
 
