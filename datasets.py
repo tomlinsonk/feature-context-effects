@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 
 DATA_DIR = 'data'
-CONFIG_DIR = 'config'
+CONFIG_DIR = 'hyperparams'
 
 
 class Dataset(ABC):
@@ -223,28 +223,28 @@ class Dataset(ABC):
         choice_sets_fname = f'{DATA_DIR}/txt-files/{cls.name}-choice-sets.txt'
         readme_fname = f'{DATA_DIR}/txt-files/{cls.name}-README.txt'
 
-        # graph, train_data, val_data, test_data = cls.load()
-        # data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(len(train_data))]
-        # histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = data
+        graph, train_data, val_data, test_data = cls.load()
+        data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(len(train_data))]
+        histories, history_lengths, choice_sets, choice_set_features, choice_set_lengths, choices = data
 
-        # with open(choice_sets_fname, 'w') as f:
-        #     f.write('\n'.join(';'.join(' '.join(f'{x.item()}' for x in item) for item in choice_set_features[i, :choice_set_lengths[i]]) for i in range(len(choices))))
-        #
-        # with open(choices_fname, 'w') as f:
-        #     f.write('\n'.join(f'{x.item()}' for x in choices))
+        with open(choice_sets_fname, 'w') as f:
+            f.write('\n'.join(';'.join(' '.join(f'{x.item()}' for x in item) for item in choice_set_features[i, :choice_set_lengths[i]]) for i in range(len(choices))))
 
-        # with open(features_fname, 'w') as f:
-        #     f.write(', '.join(cls.feature_names))
-        #
-        # with open(readme_fname, 'w') as f:
-        #     f.write('This dataset contains three files:\n'
-        #             f'1. {cls.name}-choice-sets.txt\n'
-        #             f'2. {cls.name}-choices.txt\n'
-        #             f'3. {cls.name}-features.txt\n'
-        #             'Each line in file 1 is a single choice instance. Each item in the choice set\n'
-        #             'is represented by numerical features (space separated) and each item is \n'
-        #             'semicolon-separated. The index of the item selected from each choice set is in\n'
-        #             'file 2. The names of the features are in file 3.')
+        with open(choices_fname, 'w') as f:
+            f.write('\n'.join(f'{x.item()}' for x in choices))
+
+        with open(features_fname, 'w') as f:
+            f.write(', '.join(cls.feature_names))
+
+        with open(readme_fname, 'w') as f:
+            f.write('This dataset contains three files:\n'
+                    f'1. {cls.name}-choice-sets.txt\n'
+                    f'2. {cls.name}-choices.txt\n'
+                    f'3. {cls.name}-features.txt\n'
+                    'Each line in file 1 is a single choice instance. Each item in the choice set\n'
+                    'is represented by numerical features (space separated) and each item is \n'
+                    'semicolon-separated. The index of the item selected from each choice set is in\n'
+                    'file 2. The names of the features are in file 3.')
 
         with ZipFile(zip_fname, 'w') as z:
             z.write(features_fname, os.path.basename(features_fname))
@@ -1152,9 +1152,7 @@ ALL_DATASETS = REAL_GENERAL_DATASETS + NETWORK_DATASETS
 
 if __name__ == '__main__':
     for dataset in ALL_DATASETS:
-        if dataset == DistrictSmartDataset:
-            continue
-        dataset.pickle_to_zip()
+        dataset.print_stats()
 
 
 

@@ -21,57 +21,18 @@ from datasets import WikiTalkDataset, RedditHyperlinkDataset, BitcoinAlphaDatase
     MathOverflowDataset, SyntheticLCLDataset, SyntheticMNLDataset, SushiDataset, ExpediaDataset, CarAltDataset, DistrictSmartDataset, DistrictDataset
 from models import DataLoader, MNL, LCL, train_mnl, \
     DLCL, train_model, MixedLogit
-from rename import rename_state_dict_keys
 
 PARAM_DIR = 'params'
 RESULT_DIR = 'results'
-CONFIG_DIR = 'config'
+CONFIG_DIR = 'hyperparams'
 
 
-def load_model(Model, n, dim, param_fname):
-    model = Model(n, dim, 0.5)
-
-    model.load_state_dict(torch.load(param_fname))
-    model.eval()
-
-    return model
-
-
-def load_feature_model(Model, model_param, param_fname):
+def load_model(Model, model_param, param_fname):
     model = Model(model_param)
     model.load_state_dict(torch.load(param_fname))
     model.eval()
 
     return model
-
-
-def test_model(model, dataset, loaded_data=None):
-    if loaded_data is None:
-        graph, train_data, val_data, test_data = dataset.load()
-    else:
-        graph, train_data, val_data, test_data = loaded_data
-
-    n = len(graph.nodes)
-    batch_size = 128
-
-    data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True)
-
-    count = 0
-    correct = 0
-    mean_rank = 0
-    mrr = 0
-    for histories, history_lengths, choice_sets, choice_set_lengths, choices in data_loader:
-        choice_pred = model(histories, history_lengths, choice_sets, choice_set_lengths)
-
-        ranks = (torch.argsort(choice_pred, dim=1, descending=True) == choices[:, None]).nonzero()[:, 1] + 1
-
-        vals, idxs = choice_pred.max(1)
-        mean_rank += ranks.sum().item() / batch_size
-        mrr += (1 / ranks.float()).sum().item() / batch_size
-        count += 1
-        correct += (idxs == choices).long().sum().item() / batch_size
-
-    return correct / count, mean_rank / count, mrr / count
 
 
 def compute_all_accuracies(datasets):
@@ -101,7 +62,7 @@ def compute_all_accuracies(datasets):
             param_fname = f'{PARAM_DIR}/{method.name}_{dataset.name}_train_params_{lr}_{wd}.pt'
 
             model_param = dataset.num_features
-            model = load_feature_model(method, model_param, param_fname)
+            model = load_model(method, model_param, param_fname)
 
             pred = model(choice_sets_with_features, choice_set_lengths)
             train_loss = model.loss(pred, choices)
@@ -120,7 +81,6 @@ def compute_all_accuracies(datasets):
 
     with open(f'{RESULT_DIR}/all_prediction_results.pickle', 'wb') as f:
         pickle.dump([np.array(losses), np.array(accs), np.array(mean_correct_positions), np.array(all_correct_positions), np.array(all_correct_preds)], f)
-
 
 def sci_not(num):
     string = f'{num:#.2g}'
@@ -203,7 +163,7 @@ def visualize_context_effects(datasets):
         row = i // 4
         col = i % 4
 
-        model = load_feature_model(LCL, 6, f'{PARAM_DIR}/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt')
+        model = load_model(LCL, 6, f'{PARAM_DIR}/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt')
 
         contexts = model.A.data.numpy()
         all_contexts.append(contexts)
@@ -327,7 +287,7 @@ def lcl_context_effect_tsne(datasets):
     matrix_map = dict()
 
     for i, dataset in enumerate(datasets):
-        model = load_feature_model(LCL, 6, f'{PARAM_DIR}/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt')
+        model = load_model(LCL, 6, f'{PARAM_DIR}/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt')
         flat = model.A.data.numpy().flatten()
         flat /= np.linalg.norm(flat)
         vectors.append(flat)
@@ -418,7 +378,7 @@ def dlcl_context_effect_tsne(datasets):
     matrices = []
 
     for i, dataset in enumerate(datasets):
-        model = load_feature_model(DLCL, 6, f'{PARAM_DIR}/dlcl_{dataset.name}_params_{dataset.best_lr(DLCL)}_0.001.pt')
+        model = load_model(DLCL, 6, f'{PARAM_DIR}/dlcl_{dataset.name}_params_{dataset.best_lr(DLCL)}_0.001.pt')
 
         flat = model.A.data.numpy().flatten()
         matrices.append(flat / np.linalg.norm(flat))
@@ -688,24 +648,24 @@ def visualize_context_effects_l1_reg_general_choice_dataset(dataset, method):
 
 
 def make_biggest_context_effect_table(dataset, num=5):
+    with open(f'{CONFIG_DIR}/learning_rate_settings.pickle', 'rb') as f:
+        grid_search_data, lrs = pickle.load(f)
+
+    mnl_likelihood = min([grid_search_data[dataset, MNL, lr] for lr in lrs])
+
     print(f'\n\nContext effects in {dataset.name}:')
-    model = load_feature_model(LCL, dataset.num_features,
+    model = load_model(LCL, dataset.num_features,
                                f'{PARAM_DIR}/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt')
 
-    contexts = model.A.data.numpy()
+    with open(f'{RESULT_DIR}/biggest_context_effects.pickle', 'rb') as f:
+        data = pickle.load(f)
 
-    max_abs_idx = np.dstack(np.unravel_index(np.argsort(-abs(contexts).ravel()), contexts.shape))[0]
+    for i in range(num):
+        row, col, A_pq, A_pq_only, train_losses = data[dataset, i]
+        statistic = 2*(mnl_likelihood - train_losses[-1])
+        p = stats.chi2.sf(statistic, 1)
 
-    graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
-    all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
-
-    print('Biggest effects in', dataset.name)
-    for row, col in max_abs_idx[:num]:
-        print(f'\\emph{{{dataset.feature_names[col].lower()}}} on \emph{{{dataset.feature_names[row].lower()}}} & ${contexts[row, col]:.2f}$\\\\')
-
-        model, train_losses, train_accs, _, _ = train_model(LCL(dataset.num_features), all_data, all_data, dataset.best_lr(LCL), 0.001, False, 60, (row, col))
-        print(model.A[row, col], train_losses[-1])
-
+        print(f'\\emph{{{dataset.feature_names[col].lower()}}} on \\emph{{{dataset.feature_names[row].lower()}}} & ${A_pq:.2f}$ & ${A_pq_only:.4f}$ & ${statistic:.2f}$ & ${sci_not(p)}$\\\\')
 
     print('base uts:')
     for i, name in enumerate(dataset.feature_names):
@@ -745,22 +705,24 @@ if __name__ == '__main__':
     make_biggest_context_effect_table(ExpediaDataset)
     make_biggest_context_effect_table(SushiDataset)
 
-    # make_likelihood_table(datasets.ALL_DATASETS)
-    # make_big_likelihood_table(datasets.ALL_DATASETS)
-    # compare_em_to_sgd(datasets.ALL_DATASETS)
-    #
-    # plot_binned_mnl_example()
-    #
-    # lcl_context_effect_tsne(datasets.REAL_NETWORK_DATASETS)
-    # dlcl_context_effect_tsne(datasets.REAL_NETWORK_DATASETS)
-    #
-    # visualize_context_effects_l1_reg_general_choice_dataset(SushiDataset, LCL)
-    # visualize_context_effects_l1_reg_general_choice_dataset(DistrictSmartDataset, LCL)
-    # visualize_context_effects_l1_reg_general_choice_dataset(ExpediaDataset, LCL)
-    # visualize_context_effects_l1_reg_general_choice_dataset(CarAltDataset, LCL)
-    #
-    # visualize_context_effects_l1_reg(datasets.NETWORK_DATASETS, LCL)
-    # visualize_context_effects_l1_reg(datasets.NETWORK_DATASETS, DLCL)
-    #
+    make_likelihood_table(datasets.ALL_DATASETS)
+    make_big_likelihood_table(datasets.ALL_DATASETS)
+    compare_em_to_sgd(datasets.ALL_DATASETS)
+
+    plot_binned_mnl_example()
+
+    lcl_context_effect_tsne(datasets.REAL_NETWORK_DATASETS)
+    dlcl_context_effect_tsne(datasets.REAL_NETWORK_DATASETS)
+
+    visualize_context_effects_l1_reg_general_choice_dataset(SushiDataset, LCL)
+    visualize_context_effects_l1_reg_general_choice_dataset(DistrictSmartDataset, LCL)
+    visualize_context_effects_l1_reg_general_choice_dataset(ExpediaDataset, LCL)
+    visualize_context_effects_l1_reg_general_choice_dataset(CarAltDataset, LCL)
+
+    visualize_context_effects_l1_reg(datasets.NETWORK_DATASETS, LCL)
+    visualize_context_effects_l1_reg(datasets.NETWORK_DATASETS, DLCL)
+
     # compute_all_accuracies(datasets.ALL_DATASETS)
-    # make_prediction_table(datasets.ALL_DATASETS)
+    make_prediction_table(datasets.ALL_DATASETS)
+
+

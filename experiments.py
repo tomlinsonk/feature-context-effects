@@ -16,7 +16,7 @@ from models import train_mnl, MNL, LCL, train_lcl, DLCL, train_dlcl, context_mix
 
 training_methods = {MNL: train_mnl, LCL: train_lcl, DLCL: train_dlcl, MixedLogit: train_mixed_logit}
 
-CONFIG_DIR = 'config'
+CONFIG_DIR = 'hyperparams'
 
 
 def run_model(method, dataset, dim, lr, wd, beta=None, learn_beta=None):
@@ -533,7 +533,6 @@ def biggest_context_effects(datasets, num=5):
     filename = f'biggest_context_effects.pickle'
     with open(filename, 'wb') as f:
         pickle.dump(results, f)
-
 
 
 if __name__ == '__main__':
