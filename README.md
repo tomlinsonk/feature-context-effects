@@ -37,5 +37,4 @@ datasets [here](https://drive.google.com/file/d/1kzavt-Kr3vSSzpwqpG0XtNHAeJeXTwq
 
 ## Reproducibility
 To create the plots and tables in the paper from the data provided in the repository, just run `python3 plot.py`. To run all experiments, 
-run `python3 experiments.py` (by default, this uses 30 threads--you may wish to modify this in the code). It takes a while to run everything (several days
-on 30 cores), but you can also run individual experiments by commenting out other method calls at the bottom of `experiments.py`.
+run `python3 experiments.py` after downloading the pickled datasets as described above. By default, `experiments.py` uses 30 threads--you may wish to modify this. It takes a while to run everything (several days on 30 cores), but you can also run individual experiments by commenting out other method calls at the bottom of `experiments.py`.
