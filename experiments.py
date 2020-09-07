@@ -15,6 +15,7 @@ from models import train_mnl, MNL, LCL, train_lcl, DLCL, train_dlcl, context_mix
 training_methods = {MNL: train_mnl, LCL: train_lcl, DLCL: train_dlcl, MixedLogit: train_mixed_logit}
 
 CONFIG_DIR = 'hyperparams'
+THREADS = 30
 
 
 def run_feature_model_full_dataset(method, dataset, lr, wd):
@@ -146,7 +147,7 @@ def learning_rate_grid_search(datasets, methods, update=False):
 
     results = dict()
 
-    pool = Pool(30)
+    pool = Pool(THREADS)
 
     for args, loss in tqdm(pool.imap_unordered(learning_rate_grid_search_helper, params), total=len(params)):
         results[args] = loss
@@ -189,7 +190,7 @@ def validation_loss_grid_search(datasets, methods, update=False):
 
     results = dict()
 
-    pool = Pool(30)
+    pool = Pool(THREADS)
 
     for args, losses in tqdm(pool.imap_unordered(validation_loss_grid_search_helper, params), total=len(params)):
         results[args] = losses
@@ -236,7 +237,7 @@ def l1_regularization_helper(args):
 def train_with_l1_regularization(datasets, method):
     reg_params = [0, 0.001, 0.005, 0.01, 0.05, 0.1]
     params = [(dataset, reg_param, method) for dataset in datasets for reg_param in reg_params]
-    pool = Pool(30)
+    pool = Pool(THREADS)
 
     for _ in tqdm(pool.imap_unordered(l1_regularization_helper, params), total=len(params)):
         pass
@@ -260,7 +261,7 @@ def train_data_training_helper(args):
 
 
 def train_data_training(datasets, methods):
-    pool = Pool(30)
+    pool = Pool(THREADS)
     params = {(dataset, method) for dataset in datasets for method in methods}
 
     for _ in tqdm(pool.imap_unordered(train_data_training_helper, params), total=len(params)):
@@ -271,7 +272,7 @@ def train_data_training(datasets, methods):
 
 
 def all_experiments(datasets):
-    pool = Pool(30)
+    pool = Pool(THREADS)
     pool.map(all_experiments_helper, datasets)
     pool.close()
     pool.join()
@@ -296,7 +297,7 @@ def em_grid_search(datasets):
     params = {(dataset, lr, epoch) for dataset in datasets for lr in lrs for epoch in epochs}
 
     results = dict()
-    pool = Pool(30)
+    pool = Pool(THREADS)
 
     for args, losses in tqdm(pool.imap_unordered(em_grid_search_helper, params), total=len(params)):
         results[args] = losses
@@ -363,7 +364,7 @@ def biggest_context_effects(datasets, num=5):
             params.append((dataset, index, row, col, contexts[row, col]))
 
     results = dict()
-    pool = Pool(30)
+    pool = Pool(THREADS)
 
     for key, val in tqdm(pool.imap_unordered(biggest_context_effect_helper, params), total=len(params)):
         results[key] = val
@@ -384,19 +385,18 @@ if __name__ == '__main__':
     rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (2048, rlimit[1]))
 
-
     validation_loss_grid_search(ALL_DATASETS, methods, update=False)
-    train_data_training(ALL_DATASETS, methods)
+    train_data_training(ALL_DATASETS, methods)  # Must be run after validation_loss_grid_search
 
     learning_rate_grid_search(ALL_DATASETS, methods, update=False)
-    train_with_l1_regularization(ALL_DATASETS, LCL)
-    train_with_l1_regularization(ALL_DATASETS, DLCL)
+    train_with_l1_regularization(ALL_DATASETS, LCL)   # Must be run after learning_rate_grid_search
+    train_with_l1_regularization(ALL_DATASETS, DLCL)  # Must be run after learning_rate_grid_search
 
     em_grid_search(ALL_DATASETS)
 
-    all_experiments(ALL_DATASETS)
+    all_experiments(ALL_DATASETS)  # Must be run after em_grid_search
 
-    biggest_context_effects([SushiDataset, ExpediaDataset, CarAltDataset])
+    biggest_context_effects([SushiDataset, ExpediaDataset, CarAltDataset])  # Must be run after all_experiments
 
     check_lcl_identifiability(ALL_DATASETS)
 
