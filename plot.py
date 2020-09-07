@@ -1,26 +1,21 @@
-import matplotlib
-import os
 import pickle
 
-import matplotlib.pyplot as plt
-import numpy as np
-import torch
-import statsmodels.api as sm
-import scipy.stats as stats
 import matplotlib as mpl
 import matplotlib.patches as patches
-import matplotlib.ticker as ticker
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy.stats as stats
+import statsmodels.api as sm
+import torch
 from scipy.stats import chi2
-from tqdm import tqdm
-from scipy.ndimage.filters import gaussian_filter1d
 from sklearn.manifold import TSNE
 
 import datasets
 from datasets import WikiTalkDataset, RedditHyperlinkDataset, BitcoinAlphaDataset, BitcoinOTCDataset, SMSADataset, \
-    SMSBDataset, SMSCDataset, EmailEnronDataset, EmailEUDataset, EmailW3CDataset, FacebookWallDataset, CollegeMsgDataset, \
-    MathOverflowDataset, SyntheticLCLDataset, SyntheticMNLDataset, SushiDataset, ExpediaDataset, CarAltDataset, DistrictSmartDataset, DistrictDataset
-from models import DataLoader, MNL, LCL, train_mnl, \
-    DLCL, train_model, MixedLogit
+    SMSBDataset, SMSCDataset, EmailEnronDataset, EmailEUDataset, EmailW3CDataset, FacebookWallDataset, \
+    CollegeMsgDataset, MathOverflowDataset, SyntheticLCLDataset, SyntheticMNLDataset, SushiDataset, ExpediaDataset, \
+    CarAltDataset, DistrictSmartDataset
+from models import MNL, LCL, DLCL, MixedLogit
 
 PARAM_DIR = 'params'
 RESULT_DIR = 'results'

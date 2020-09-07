@@ -1,35 +1,20 @@
-import os
 import pickle
-import random
 from multiprocessing.pool import Pool
 
-import choix
+import pickle
+from multiprocessing.pool import Pool
+
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from datasets import ALL_DATASETS, DistrictDataset, CarAltDataset, ExpediaDataset, SushiDataset
-
+from datasets import ALL_DATASETS
 from models import train_mnl, MNL, LCL, train_lcl, DLCL, train_dlcl, context_mixture_em, train_mixed_logit, MixedLogit, \
     train_model
 
 training_methods = {MNL: train_mnl, LCL: train_lcl, DLCL: train_dlcl, MixedLogit: train_mixed_logit}
 
 CONFIG_DIR = 'hyperparams'
-
-
-def run_model(method, dataset, dim, lr, wd, beta=None, learn_beta=None):
-    graph, train_data, val_data, test_data = dataset.load()
-
-    print(f'Training {method.name} on {dataset.name} (dim={dim}, lr={lr}, wd={wd}, beta={beta}, learn_beta={learn_beta})')
-
-    model, train_losses, train_accs, val_losses, val_accs = training_methods[method](len(graph.nodes), train_data,
-                                                                                     val_data, dim=dim, lr=lr, weight_decay=wd,
-                                                                                     beta=beta, learn_beta=learn_beta)
-    torch.save(model.state_dict(), f'{method.name}_{dataset.name}_params_{dim}_{lr}_{wd}_{beta}_{learn_beta}.pt')
-    with open(f'{method.name}_{dataset.name}_losses_{dim}_{lr}_{wd}_{beta}_{learn_beta}.pickle', 'wb') as f:
-        pickle.dump((train_losses, train_accs, val_losses, val_accs), f)
 
 
 def run_feature_model_full_dataset(method, dataset, lr, wd):
@@ -58,151 +43,6 @@ def run_feature_model_train_data(method, dataset, lr, wd):
         pickle.dump((train_losses, train_accs, val_losses, val_accs), f)
 
     return model
-
-
-def compare_methods(dataset):
-    run_model(HistoryCDM, dataset, 64, 0.005, 0, 0.5, True)
-    run_model(HistoryMNL, dataset, 64, 0.005, 0, 0.5, True)
-    run_model(LSTM, dataset, 64, 0.005, 0)
-
-
-def grid_search(dataset):
-    for lr in [0.005]:
-        for wd in [0, 1e-4, 5e-4, 1e-3]:
-            run_model(HistoryCDM, dataset, 8, lr=lr, wd=wd, beta=0.5, learn_beta=True)
-            run_model(HistoryMNL, dataset, 8, lr=lr, wd=wd, beta=0.5, learn_beta=True)
-            run_model(LSTM, dataset, 8, lr=lr, wd=wd)
-
-
-def run_baselines(dataset):
-    graph, train_data, val_data, test_data = dataset.load()
-
-    n = len(graph.nodes)
-
-    histories, history_lengths, choice_sets, choice_set_lengths, choices = train_data
-    transitions = np.zeros((n, n))
-    for i in range(len(histories)):
-        transitions[histories[i][0], choice_sets[i][choices[i]]] += 1
-
-    traffic_in = transitions.sum(axis=0)
-    traffic_out = transitions.sum(axis=1)
-
-    histories, history_lengths, choice_sets, choice_set_lengths, choices = val_data
-
-    try:
-        params = choix.choicerank(graph, traffic_in, traffic_out)
-
-        correct = 0
-        total = 0
-        for i in range(len(histories)):
-            choice_set = choice_sets[i, :choice_set_lengths[i]]
-            probs = choix.probabilities(choice_set, params)
-            total += 1
-
-            if np.argmax(probs) == choices[i].item():
-                correct += 1
-
-        print('ChoiceRank')
-        print(f'\tAccuracy: {correct / total}')
-    except RuntimeError:
-        print('ChoiceRank crashed')
-
-    correct = 0
-    total = 0
-    for i in range(len(histories)):
-        pred = np.random.randint(0, choice_set_lengths[i])
-        total += 1
-
-        if pred == choices[i].item():
-            correct += 1
-
-    print('Random')
-    print(f'\tAccuracy: {correct / total}')
-
-    correct = 0
-    total = 0
-    most_frequent = np.argmax(transitions, axis=1)
-
-    for i in range(len(histories)):
-        total += 1
-
-        if most_frequent[histories[i][0]] == choice_sets[i][choices[i].item()]:
-            correct += 1
-
-    print('Pick-most-frequent')
-    print(f'\tAccuracy: {correct / total}')
-
-    correct = 0
-    total = 0
-
-    for i in range(len(histories)):
-        total += 1
-
-        prediction = most_frequent[histories[i][0]]
-        if history_lengths[i] > 1:
-            prediction = histories[i][1]
-
-        if prediction == choice_sets[i][choices[i].item()]:
-            correct += 1
-
-    print('Return-to-previous (default pick-most-frequent)')
-    print(f'\tAccuracy: {correct / total}')
-
-    correct = 0
-    total = 0
-
-    for i in range(len(histories)):
-        total += 1
-
-        if histories[i][0] == choice_sets[i][choices[i].item()]:
-            correct += 1
-
-    print('Repeat-current')
-    print(f'\tAccuracy: {correct / total}')
-
-
-def run_triadic_closure_baselines(dataset):
-    graph, train_data, val_data, test_data = dataset.load()
-
-    histories, history_lengths, choice_sets, choice_set_lengths, choices = val_data
-    index_to_node = {graph.nodes[node]['index']: node for node in graph.nodes}
-
-    # Max indegree
-    total = 0
-    correct = 0
-    for i in range(len(histories)):
-        total += 1
-        options = [index_to_node[index.item()] for index in choice_sets[i][:choice_set_lengths[i]]]
-
-        max_indegree_node = max(graph.in_degree(options), key=lambda pair: pair[1])[0]
-        if choice_sets[i][choices[i]] == graph.nodes[max_indegree_node]['index']:
-            correct += 1
-
-    print('Max indegree:', correct / total)
-
-    # Max outdegree
-    total = 0
-    correct = 0
-    for i in range(len(histories)):
-        total += 1
-        options = [index_to_node[index.item()] for index in choice_sets[i][:choice_set_lengths[i]]]
-
-        max_outdegree_node = max(graph.out_degree(options), key=lambda pair: pair[1])[0]
-        if choice_sets[i][choices[i]] == graph.nodes[max_outdegree_node]['index']:
-            correct += 1
-
-    print('Max outdegree:', correct / total)
-
-    # Random
-    total = 0
-    correct = 0
-    for i in range(len(histories)):
-        total += 1
-
-        if choice_sets[i][choices[i]] == random.choice(choice_sets[i][:choice_set_lengths[i]]):
-            correct += 1
-
-    print('Random:', correct / total)
 
 
 def compile_choice_data(dataset):
@@ -270,11 +110,11 @@ def learn_binned_mnl(dataset):
         pickle.dump(data, f)
 
 
-def run_likelihood_ratio_test(dataset, wd, methods):
-    for method in methods:
+def run_all_models(dataset, wd, models):
+    for model in models:
         torch.random.manual_seed(0)
         np.random.seed(0)
-        run_feature_model_full_dataset(method, dataset, dataset.best_lr(method), wd)
+        run_feature_model_full_dataset(model, dataset, dataset.best_lr(model), wd)
 
 
 def train_context_mixture_em(dataset):
@@ -373,7 +213,7 @@ def validation_loss_grid_search(datasets, methods, update=False):
         pickle.dump((results, datasets, methods, lrs, wds), f)
 
 
-def l1_regularization_grid_search_helper(args):
+def l1_regularization_helper(args):
     dataset, reg_param, method = args
     graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
@@ -393,12 +233,12 @@ def l1_regularization_grid_search_helper(args):
         pickle.dump((model, train_losses), f)
 
 
-def l1_regularization_grid_search(datasets, method):
+def train_with_l1_regularization(datasets, method):
     reg_params = [0, 0.001, 0.005, 0.01, 0.05, 0.1]
     params = [(dataset, reg_param, method) for dataset in datasets for reg_param in reg_params]
     pool = Pool(30)
 
-    for _ in tqdm(pool.imap_unordered(l1_regularization_grid_search_helper, params), total=len(params)):
+    for _ in tqdm(pool.imap_unordered(l1_regularization_helper, params), total=len(params)):
         pass
 
     pool.close()
@@ -408,6 +248,7 @@ def l1_regularization_grid_search(datasets, method):
 def all_experiments_helper(dataset):
     learn_binned_mnl(dataset)
     train_context_mixture_em(dataset)
+    run_all_models(dataset, 0.001, [LCL, DLCL, MixedLogit, MNL])
 
 
 def train_data_training_helper(args):
@@ -542,21 +383,19 @@ if __name__ == '__main__':
     import resource
     rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (2048, rlimit[1]))
-
-    biggest_context_effects([SushiDataset, ExpediaDataset, CarAltDataset])
-
-    # l1_regularization_grid_search_helper((DistrictDataset, 0, LCL))
+    #
+    # biggest_context_effects([SushiDataset, ExpediaDataset, CarAltDataset])
 
     # em_grid_search(ALL_DATASETS)
 
-    # check_lcl_identifiability(ALL_DATASETS)
+    check_lcl_identifiability(ALL_DATASETS)
 
     # validation_loss_grid_search(ALL_DATASETS, methods, update=False)
     # train_data_training(ALL_DATASETS, methods)
 
     # learning_rate_grid_search(ALL_DATASETS, methods, update=False)
-    # l1_regularization_grid_search(ALL_DATASETS, LCL)
-    # l1_regularization_grid_search(ALL_DATASETS, DLCL)
+    # train_with_l1_regularization(ALL_DATASETS, LCL)
+    # train_with_l1_regularization(ALL_DATASETS, DLCL)
 
     # all_experiments(ALL_DATASETS)
 

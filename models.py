@@ -1,12 +1,9 @@
 import time
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch import nn, jit
-from torch.nn.utils.rnn import pack_padded_sequence
 from tqdm import tqdm
-from scipy import optimize as opt
 
 
 # From https://github.com/pytorch/pytorch/issues/31829
