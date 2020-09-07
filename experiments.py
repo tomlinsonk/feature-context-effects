@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from datasets import ALL_DATASETS
+from datasets import ALL_DATASETS, SushiDataset, ExpediaDataset, CarAltDataset
 from models import train_mnl, MNL, LCL, train_lcl, DLCL, train_dlcl, context_mixture_em, train_mixed_logit, MixedLogit, \
     train_model
 
@@ -383,20 +383,23 @@ if __name__ == '__main__':
     import resource
     rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
     resource.setrlimit(resource.RLIMIT_NOFILE, (2048, rlimit[1]))
-    #
-    # biggest_context_effects([SushiDataset, ExpediaDataset, CarAltDataset])
 
-    # em_grid_search(ALL_DATASETS)
+
+    validation_loss_grid_search(ALL_DATASETS, methods, update=False)
+    train_data_training(ALL_DATASETS, methods)
+
+    learning_rate_grid_search(ALL_DATASETS, methods, update=False)
+    train_with_l1_regularization(ALL_DATASETS, LCL)
+    train_with_l1_regularization(ALL_DATASETS, DLCL)
+
+    em_grid_search(ALL_DATASETS)
+
+    all_experiments(ALL_DATASETS)
+
+    biggest_context_effects([SushiDataset, ExpediaDataset, CarAltDataset])
 
     check_lcl_identifiability(ALL_DATASETS)
 
-    # validation_loss_grid_search(ALL_DATASETS, methods, update=False)
-    # train_data_training(ALL_DATASETS, methods)
 
-    # learning_rate_grid_search(ALL_DATASETS, methods, update=False)
-    # train_with_l1_regularization(ALL_DATASETS, LCL)
-    # train_with_l1_regularization(ALL_DATASETS, DLCL)
-
-    # all_experiments(ALL_DATASETS)
 
 

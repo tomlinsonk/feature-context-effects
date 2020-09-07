@@ -508,7 +508,7 @@ def toy_example():
     train_data = choice_set_features, choice_set_lengths, choices
 
     model, train_losses, train_accs, val_losses, val_accs = train_mnl(train_data, train_data, num_features=3, lr=0.1, weight_decay=0.001)
-    print(model.thetas)
+    print(model.theta.data)
 
 
 if __name__ == '__main__':
