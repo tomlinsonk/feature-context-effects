@@ -2,7 +2,7 @@
 
 This repository accompanies the paper
 
-> Kiran Tomlinson and Austin R. Benson. Learning Feature Context Effects in Discrete Choice. 2020. (arXiv link soon)
+> Kiran Tomlinson and Austin R. Benson. Learning Interpretable Feature Context Effects in Discrete Choice. 2020. (arXiv link soon)
 
 ## Libraries
 We used:
