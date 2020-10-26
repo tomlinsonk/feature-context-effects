@@ -717,7 +717,7 @@ if __name__ == '__main__':
     visualize_context_effects_l1_reg(datasets.NETWORK_DATASETS, LCL)
     visualize_context_effects_l1_reg(datasets.NETWORK_DATASETS, DLCL)
 
-    # compute_all_accuracies(datasets.ALL_DATASETS)
+    compute_all_accuracies(datasets.ALL_DATASETS)
     make_prediction_table(datasets.ALL_DATASETS)
 
 

@@ -21,7 +21,7 @@ class DataLoader:
     Simplified, faster DataLoader.
     From https://github.com/arjunsesh/cdm-icml with minor tweaks.
     """
-    def __init__(self, data, batch_size=None, shuffle=False, sort_batch=False, sort_index=None, device=torch.device('cpu')):
+    def __init__(self, data, batch_size=None, shuffle=False, sort_batch=False, sort_index=None):
         self.data = data
         self.data_size = data[0].shape[0]
         self.batch_size = batch_size
@@ -30,7 +30,6 @@ class DataLoader:
         self.stop_iteration = False
         self.sort_batch = sort_batch
         self.sort_index = sort_index
-        self.device = device
 
     def __iter__(self):
         return self
@@ -42,12 +41,12 @@ class DataLoader:
 
         if self.batch_size is None or self.batch_size == self.data_size:
             self.stop_iteration = True
-            return [item.to(self.device) for item in self.data]
+            return [item for item in self.data]
         else:
             i = self.counter
             bs = self.batch_size
             self.counter += 1
-            batch = [item[i * bs:(i + 1) * bs].to(self.device) for item in self.data]
+            batch = [item[i * bs:(i + 1) * bs] for item in self.data]
             if self.counter * bs >= self.data_size:
                 self.counter = 0
                 self.stop_iteration = True
@@ -58,7 +57,7 @@ class DataLoader:
 
             if self.sort_batch:
                 perm = torch.argsort(batch[self.sort_index], dim=0, descending=True)
-                batch = [item[perm].to(self.device) for item in batch]
+                batch = [item[perm] for item in batch]
 
             return batch
 
@@ -91,19 +90,18 @@ class MNL(nn.Module):
 
     name = 'mnl'
 
-    def __init__(self, num_features, device=torch.device('cpu')):
+    def __init__(self, num_features):
         super().__init__()
 
         self.num_features = num_features
         self.theta = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
-        self.device = device
 
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
 
         utilities = (self.theta * choice_set_features).sum(-1)
 
-        utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
+        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
 
         return nn.functional.log_softmax(utilities, 1)
 
@@ -122,26 +120,28 @@ class LCL(nn.Module):
 
     name = 'lcl'
 
-    def __init__(self, num_features, device=torch.device('cpu'), l1_reg=0):
+    def __init__(self, num_features, l1_reg=0):
         super().__init__()
 
         self.num_features = num_features
         self.theta = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
         self.A = nn.Parameter(torch.zeros(self.num_features, self.num_features), requires_grad=True)
 
-        self.device = device
         self.l1_reg = l1_reg
 
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
 
-        context_feature_sums = (choice_set_features.sum(1, keepdim=True) - choice_set_features)
+        # Compute mean of each feature over each choice set
+        mean_choice_set_features = choice_set_features.sum(1) / choice_set_lengths.unsqueeze(-1)
 
-        context_times_feature = (self.A.T @ choice_set_features.unsqueeze(3)).squeeze()
+        # Compute context effect in each sample
+        context_effects = self.A @ mean_choice_set_features.unsqueeze(-1)
 
-        utilities = ((context_feature_sums * context_times_feature).sum(-1)) / choice_set_lengths[:, None] + (self.theta * choice_set_features).sum(-1)
+        # Compute context-adjusted utility of every item
+        utilities = ((self.theta.unsqueeze(-1) + context_effects).view(batch_size, 1, -1) * choice_set_features).sum(-1)
+        utilities[torch.arange(max_choice_set_len).unsqueeze(0) >= choice_set_lengths.unsqueeze(-1)] = -np.inf
 
-        utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
         return nn.functional.log_softmax(utilities, 1)
 
     def loss(self, y_pred, y):
@@ -159,7 +159,7 @@ class DLCL(nn.Module):
 
     name = 'dlcl'
 
-    def __init__(self, num_features, device=torch.device('cpu'), l1_reg=0):
+    def __init__(self, num_features, l1_reg=0):
         super().__init__()
 
         self.num_features = num_features
@@ -172,7 +172,6 @@ class DLCL(nn.Module):
 
         self.mixture_weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
 
-        self.device = device
         self.l1_reg = l1_reg
 
     def forward(self, choice_set_features, choice_set_lengths):
@@ -186,7 +185,7 @@ class DLCL(nn.Module):
 
         # Compute utility of each item under each feature MNL
         utilities = choice_set_features @ utility_matrices
-        utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
+        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
 
         # Compute MNL log-probs for each feature
         log_probs = nn.functional.log_softmax(utilities, 1)
@@ -214,21 +213,19 @@ class MixedLogit(nn.Module):
 
     name = 'mixed_logit'
 
-    def __init__(self, num_features, device=torch.device('cpu')):
+    def __init__(self, num_features):
         super().__init__()
 
         self.num_features = num_features
         self.thetas = nn.Parameter(torch.rand(self.num_features, self.num_features), requires_grad=True)
         self.mixture_weights = nn.Parameter(torch.ones(self.num_features), requires_grad=True)
 
-        self.device = device
-
     def forward(self, choice_set_features, choice_set_lengths):
         batch_size, max_choice_set_len, num_feats = choice_set_features.size()
 
         # Compute utility of each item under each MNL
         utilities = choice_set_features @ self.thetas.T
-        utilities[torch.arange(max_choice_set_len)[None, :].to(self.device) >= choice_set_lengths[:, None]] = -np.inf
+        utilities[torch.arange(max_choice_set_len)[None, :] >= choice_set_lengths[:, None]] = -np.inf
 
         # Compute MNL log-probs for each feature
         log_probs = nn.functional.log_softmax(utilities, 1)
@@ -254,7 +251,7 @@ class MixedLogit(nn.Module):
 
 class EMAlgorithmQ(nn.Module):
 
-    def __init__(self, num_features, r, mean_cs_features, B_init, C_init, device=torch.device('cpu')):
+    def __init__(self, num_features, r, mean_cs_features, B_init, C_init):
         super().__init__()
 
         self.num_features = num_features
@@ -263,8 +260,6 @@ class EMAlgorithmQ(nn.Module):
 
         self.B = nn.Parameter(B_init, requires_grad=True)
         self.C = nn.Parameter(C_init, requires_grad=True)
-
-        self.device = device
 
     def forward(self, choice_set_features, choice_set_lengths, choices, indices):
         batch_size, max_choice_set_len, _ = choice_set_features.size()
@@ -283,16 +278,12 @@ class EMAlgorithmQ(nn.Module):
 
 
 def train_model(model, train_data, val_data, lr, weight_decay, compute_val_stats=True, timeout_min=60, only_context_effect=None):
-    device = torch.device('cpu')
     torch.set_num_threads(1)
 
-    model.device = device
-    model.to(device)
-
     batch_size = 128
-    train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, device=device)
+    train_data_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
-    val_data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False, device=device)
+    val_data_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, amsgrad=True, weight_decay=weight_decay)
 
@@ -498,7 +489,7 @@ def toy_example():
          [x_2, x_3, z, z],
          [x_1, x_4, z, z],
          [x_2, x_3, x_4, z]]
-    )
+    ).float()
 
     choice_set_lengths = torch.tensor([2, 2, 1, 2, 2, 3])
 
@@ -507,8 +498,8 @@ def toy_example():
 
     train_data = choice_set_features, choice_set_lengths, choices
 
-    model, train_losses, train_accs, val_losses, val_accs = train_mnl(train_data, train_data, num_features=3, lr=0.1, weight_decay=0.001)
-    print(model.theta.data)
+    model, train_losses, train_accs, val_losses, val_accs = train_lcl(train_data, train_data, num_features=3, lr=0.1, weight_decay=0.001)
+    print(model.theta.data, model.A.data)
 
 
 if __name__ == '__main__':
