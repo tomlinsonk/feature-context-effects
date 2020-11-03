@@ -140,7 +140,7 @@ def make_prediction_table(datasets):
                 print(f' & {val:.4f}{sig_mark} ({stds[i]:.4f})'.replace('0.', '.'), end='')
 
             if i == 1:
-                print(f' & {int(mnl_lcl_wilcoxon_W)} & ${sci_not(mnl_lcl_wilcoxon_p)}$', end='')
+                print(f' & {int(mnl_lcl_wilcoxon_W) if mnl_lcl_wilcoxon_W else "---"} & ${sci_not(mnl_lcl_wilcoxon_p)}$', end='')
             elif i == 3:
                 print(f' & {int(mmnl_dlcl_wilcoxon_W) if mmnl_dlcl_wilcoxon_W else "---"} & ${sci_not(mmnl_dlcl_wilcoxon_p)}$', end='')
 
@@ -249,11 +249,11 @@ def visualize_context_effects_l1_reg(datasets, method):
             elif dataset == SyntheticMNLDataset:
                 ymax_pcts = 0.04
         else:
-            if dataset in (EmailEnronDataset, EmailW3CDataset, CollegeMsgDataset, SyntheticLCLDataset, BitcoinOTCDataset, SMSBDataset):
+            if dataset in (EmailW3CDataset, CollegeMsgDataset, SyntheticLCLDataset, BitcoinOTCDataset, SMSBDataset, SMSADataset, EmailEUDataset, BitcoinAlphaDataset):
                 ymax_pcts = 4
             elif dataset == SyntheticMNLDataset:
                 ymax_pcts = 0.1
-            elif dataset == MathOverflowDataset:
+            elif dataset in [MathOverflowDataset, EmailEnronDataset]:
                 ymax_pcts = 6
 
         y_min = min(losses + [sig_thresh])
@@ -277,6 +277,7 @@ def visualize_context_effects_l1_reg(datasets, method):
     plt.savefig(f'l1-regularization-{method.name}.pdf', bbox_inches='tight')
     plt.close()
 
+
 def lcl_context_effect_tsne(datasets):
     vectors = []
     matrix_map = dict()
@@ -290,7 +291,7 @@ def lcl_context_effect_tsne(datasets):
 
     vectors = np.array(vectors)
 
-    tsne = TSNE(n_components=2, random_state=1, perplexity=2)
+    tsne = TSNE(n_components=2, random_state=1, perplexity=1.5)
     projected = tsne.fit_transform(vectors)
 
     fig, main_ax = plt.subplots(1)
@@ -306,63 +307,66 @@ def lcl_context_effect_tsne(datasets):
     vas = {dataset.name: 'center' for dataset in datasets}
 
     has['email-W3C'] = 'right'
-    has['email-enron'] = 'right'
+    has['sms-b'] = 'right'
     has['bitcoin-alpha'] = 'right'
     has['bitcoin-otc'] = 'right'
 
+    offsets['reddit-hyperlink'] = (0, 8)
     offsets['email-W3C'] = (-5, 0)
-    offsets['email-enron'] = (-5, 0)
-    offsets['bitcoin-alpha'] = (-5, 0)
-    offsets['bitcoin-otc'] = (-5, 0)
+    offsets['wiki-talk'] = (-12, -11)
+
+    offsets['sms-b'] = (-5, 0)
+    offsets['bitcoin-alpha'] = (-5, 2)
+    offsets['bitcoin-otc'] = (-5, -2)
+    offsets['email-enron'] = (5, -2)
 
     for i, txt in enumerate([dataset.name for dataset in datasets]):
         plt.annotate(txt, xy=projected[i], horizontalalignment=has[txt], verticalalignment=vas[txt], xytext=offsets[txt], textcoords='offset points')
 
-
     vscale = 0.5
 
-    # mathoverflow + facebook-wall
-    cluster_datasets = [MathOverflowDataset, FacebookWallDataset]
+    # mathoverflow + facebook-wall + sms
+    cluster_datasets = [MathOverflowDataset, FacebookWallDataset, SMSADataset, SMSBDataset, SMSCDataset]
     cluster_matrices = [matrix_map[d] for d in cluster_datasets]
     cluster_matrix = np.mean(cluster_matrices, axis=0)
-    ax = plt.axes([.45, .725, .1, .1])
+    ax = plt.axes([.25, .6, .1, .1])
     ax.matshow(cluster_matrix, cmap='bwr', vmax=vscale, vmin=-vscale, interpolation='nearest')
     ax.set_xticks([])
     ax.set_yticks([])
-    rect = patches.Rectangle((-360, 250), 420, 150, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
+    rect = patches.Rectangle((-370, -340), 300, 520, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
     main_ax.add_patch(rect)
 
-    # sms + reddit-hyperlink
-    cluster_datasets = [SMSADataset, SMSBDataset, SMSCDataset, RedditHyperlinkDataset]
+    # email-w3c + email-enron + college-msg
+    cluster_datasets = [EmailW3CDataset, EmailEnronDataset, CollegeMsgDataset]
     cluster_matrices = [matrix_map[d] for d in cluster_datasets]
     cluster_matrix = np.mean(cluster_matrices, axis=0)
-    ax = plt.axes([.35, .45, .1, .1])
+    ax = plt.axes([.69, .62, .1, .1])
     ax.matshow(cluster_matrix, cmap='bwr', vmax=vscale, vmin=-vscale, interpolation='nearest')
     ax.set_xticks([])
     ax.set_yticks([])
-    rect = patches.Rectangle((-475, -100), 460, 210, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
+    rect = patches.Rectangle((130, -40), 270, 410, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
     main_ax.add_patch(rect)
 
-    # email-eu + wiki-talk + college-msg
-    cluster_datasets = [EmailEUDataset, WikiTalkDataset, CollegeMsgDataset]
+    # email-eu + wiki-talk + reddit-hyperlink
+    cluster_datasets = [EmailEUDataset, WikiTalkDataset, RedditHyperlinkDataset]
     cluster_matrices = [matrix_map[d] for d in cluster_datasets]
     cluster_matrix = np.mean(cluster_matrices, axis=0)
-    ax = plt.axes([.55, .20, .1, .1])
+    ax = plt.axes([.61, .38, .1, .1])
     ax.matshow(cluster_matrix, cmap='bwr', vmax=vscale, vmin=-vscale, interpolation='nearest')
     ax.set_xticks([])
     ax.set_yticks([])
-    rect = patches.Rectangle((-200, -340), 380, 190, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
+    rect = patches.Rectangle((20, -450), 300, 390, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
     main_ax.add_patch(rect)
 
-    # bitcoin + email
-    cluster_datasets = [BitcoinOTCDataset, BitcoinAlphaDataset, EmailEnronDataset, EmailW3CDataset]
+    # bitcoin
+    cluster_datasets = [BitcoinOTCDataset, BitcoinAlphaDataset]
     cluster_matrices = [matrix_map[d] for d in cluster_datasets]
     cluster_matrix = np.mean(cluster_matrices, axis=0)
-    ax = plt.axes([.72, .71, .1, .1])
+    ax = plt.axes([.63, .17, .1, .1])
     ax.matshow(cluster_matrix, cmap='bwr', vmax=vscale, vmin=-vscale, interpolation='nearest')
     ax.set_xticks([])
     ax.set_yticks([])
-    rect = patches.Rectangle((200, -50), 250, 440, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
+    rect = patches.Rectangle((-120, -800), 390, 260, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
     main_ax.add_patch(rect)
 
     plt.savefig('lcl-tsne.pdf', bbox_inches='tight')
@@ -660,7 +664,7 @@ def make_biggest_context_effect_table(dataset, num=5):
         statistic = 2*(mnl_likelihood - train_losses[-1])
         p = stats.chi2.sf(statistic, 1)
 
-        print(f'\\emph{{{dataset.feature_names[col].lower()}}} on \\emph{{{dataset.feature_names[row].lower()}}} & ${A_pq:.2f}$ & ${A_pq_only:.4f}$ & ${statistic:.2f}$ & ${sci_not(p)}$\\\\')
+        print(f'\\emph{{{dataset.feature_names[col].lower()}}} on \\emph{{{dataset.feature_names[row].lower()}}} & ${A_pq:.2f}$ & ${A_pq_only:.2f}$ & ${statistic:.2f}$ & ${sci_not(p)}$\\\\')
 
     print('base uts:')
     for i, name in enumerate(dataset.feature_names):

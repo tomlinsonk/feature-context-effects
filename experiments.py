@@ -1,3 +1,4 @@
+import os
 import pickle
 from multiprocessing.pool import Pool
 
@@ -15,6 +16,8 @@ from models import train_mnl, MNL, LCL, train_lcl, DLCL, train_dlcl, context_mix
 training_methods = {MNL: train_mnl, LCL: train_lcl, DLCL: train_dlcl, MixedLogit: train_mixed_logit}
 
 CONFIG_DIR = 'hyperparams'
+PARAM_DIR = 'params'
+RESULTS_DIR = 'results'
 THREADS = 30
 
 
@@ -26,8 +29,8 @@ def run_feature_model_full_dataset(method, dataset, lr, wd):
     print(f'Training {method.name} on {dataset.name} (lr={lr}, wd={wd})')
 
     model, train_losses, train_accs, val_losses, val_accs = training_methods[method](all_data, val_data, dataset.num_features, lr=lr, weight_decay=wd, compute_val_stats=False)
-    torch.save(model.state_dict(), f'{method.name}_{dataset.name}_params_{lr}_{wd}.pt')
-    with open(f'{method.name}_{dataset.name}_losses_{lr}_{wd}.pickle', 'wb') as f:
+    torch.save(model.state_dict(), f'{PARAM_DIR}/{method.name}_{dataset.name}_params_{lr}_{wd}.pt')
+    with open(f'{RESULTS_DIR}/{method.name}_{dataset.name}_losses_{lr}_{wd}.pickle', 'wb') as f:
         pickle.dump((train_losses, train_accs, val_losses, val_accs), f)
 
     return model
@@ -39,8 +42,8 @@ def run_feature_model_train_data(method, dataset, lr, wd):
     print(f'Training {method.name} on {dataset.name}, training data only (lr={lr}, wd={wd})')
 
     model, train_losses, train_accs, val_losses, val_accs = training_methods[method](train_data[3:], val_data[3:], dataset.num_features, lr=lr, weight_decay=wd, compute_val_stats=False)
-    torch.save(model.state_dict(), f'{method.name}_{dataset.name}_train_params_{lr}_{wd}.pt')
-    with open(f'{method.name}_{dataset.name}_train_losses_{lr}_{wd}.pickle', 'wb') as f:
+    torch.save(model.state_dict(), f'{PARAM_DIR}/{method.name}_{dataset.name}_train_params_{lr}_{wd}.pt')
+    with open(f'{RESULTS_DIR}/{method.name}_{dataset.name}_train_losses_{lr}_{wd}.pickle', 'wb') as f:
         pickle.dump((train_losses, train_accs, val_losses, val_accs), f)
 
     return model
@@ -107,7 +110,7 @@ def learn_binned_mnl(dataset):
 
         data[i] = bins, mnl_utilities, bin_counts, bin_choice_set_log_lengths, bin_losses
 
-    with open(f'{dataset.name}_binned_mnl_params.pickle', 'wb') as f:
+    with open(f'{RESULTS_DIR}/{dataset.name}_binned_mnl_params.pickle', 'wb') as f:
         pickle.dump(data, f)
 
 
@@ -124,7 +127,7 @@ def train_context_mixture_em(dataset):
     all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
 
     model = context_mixture_em(all_data, dataset.num_features)
-    torch.save(model.state_dict(), f'context_mixture_em_{dataset.name}_params.pt')
+    torch.save(model.state_dict(), f'{PARAM_DIR}/context_mixture_em_{dataset.name}_params.pt')
 
 
 def learning_rate_grid_search_helper(args):
@@ -228,7 +231,7 @@ def l1_regularization_helper(args):
         compute_val_stats=False,
         l1_reg=reg_param)
 
-    filename = f'l1_reg_{method.name}_{dataset.name}_{reg_param}.pickle'
+    filename = f'{RESULTS_DIR}/l1_reg_{method.name}_{dataset.name}_{reg_param}.pickle'
 
     with open(filename, 'wb') as f:
         pickle.dump((model, train_losses), f)
@@ -355,7 +358,7 @@ def biggest_context_effects(datasets, num=5):
 
     for dataset in datasets:
         model = LCL(dataset.num_features)
-        model.load_state_dict(torch.load(f'params/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt'))
+        model.load_state_dict(torch.load(f'{PARAM_DIR}/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt'))
         contexts = model.A.data.numpy()
 
         max_abs_idx = np.dstack(np.unravel_index(np.argsort(-abs(contexts).ravel()), contexts.shape))[0]
@@ -372,12 +375,15 @@ def biggest_context_effects(datasets, num=5):
     pool.close()
     pool.join()
 
-    filename = f'biggest_context_effects.pickle'
+    filename = f'{RESULTS_DIR}/biggest_context_effects.pickle'
     with open(filename, 'wb') as f:
         pickle.dump(results, f)
 
 
 if __name__ == '__main__':
+    for directory in [CONFIG_DIR, RESULTS_DIR, PARAM_DIR]:
+        os.makedirs(directory, exist_ok=True)
+
     methods = [MixedLogit, MNL, DLCL, LCL]
 
     # Fix for RuntimeError: received 0 items of ancdata (https://github.com/pytorch/pytorch/issues/973)
