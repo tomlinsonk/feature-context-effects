@@ -7,6 +7,8 @@ import numpy as np
 import scipy.stats as stats
 import statsmodels.api as sm
 import torch
+from matplotlib import patheffects
+from matplotlib.ticker import FormatStrFormatter
 from scipy.stats import chi2
 from sklearn.manifold import TSNE
 
@@ -94,6 +96,15 @@ def make_prediction_table(datasets):
     with open(f'{RESULT_DIR}/all_prediction_results.pickle', 'rb') as f:
         losses, accs, mean_correct_positions, all_correct_positions, all_correct = pickle.load(f)
 
+
+    n_cols = 8
+    fig, axes = plt.subplots(3, n_cols, figsize=(15, 4.5))
+    fig_num = 0
+
+    colors = ["#dc622c", "#8b4acc", "#84c440", "#d93b8e"]
+    names = ['MNL', 'LCL', 'Mixed logit', 'DLCL']
+    markers = ['o', '^', 's', 'D']
+
     for j, dataset in enumerate(datasets):
         mnl = mean_correct_positions[0, j]
         lcl = mean_correct_positions[1, j]
@@ -104,6 +115,23 @@ def make_prediction_table(datasets):
         lcl_positions = all_correct_positions[1, j]
         mixed_mnl_positions = all_correct_positions[2, j]
         dlcl_positions = all_correct_positions[3, j]
+
+        for i, mrrs in enumerate([mnl_positions, lcl_positions, mixed_mnl_positions, dlcl_positions]):
+            axes[fig_num // n_cols, fig_num % n_cols].errorbar(i, np.mean(mrrs), yerr=stats.sem(mrrs), color=colors[i],
+                                                               fmt=markers[i], capsize=2, label=names[i])
+
+
+
+        # axes[fig_num // n_cols, fig_num % n_cols].text(0.5, 0.85, dataset.name, ha='center', va='center',
+        #                                                bbox=dict(facecolor='white', alpha=0.8, pad=0, edgecolor='white',
+        #                                                          boxstyle='round,pad=0.2'),
+        #                                                transform=axes[fig_num // n_cols, fig_num % n_cols].transAxes)
+        axes[fig_num // n_cols, fig_num % n_cols].set_title(dataset.name, fontsize=11, pad=3)
+        axes[fig_num // n_cols, fig_num % n_cols].set_xticks([])
+        axes[fig_num // n_cols, fig_num % n_cols].set_xlim(-0.5, 3.5)
+        # axes[fig_num // n_cols, fig_num % n_cols].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+
+        axes[fig_num // n_cols, fig_num % n_cols].yaxis.set_tick_params(labelsize=8)
 
         stds = [np.std(mnl_positions), np.std(lcl_positions), np.std(mixed_mnl_positions), np.std(dlcl_positions)]
 
@@ -126,11 +154,17 @@ def make_prediction_table(datasets):
             if i == 1:
                 if mnl_lcl_wilcoxon_p < p_thresh:
                     sig_mark = '$^*$'
+                    # txt = axes[fig_num // n_cols, fig_num % n_cols].text(1, lcl, '*', ha='center', va='top', color='white', fontsize=11)
+                    # txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='black')])
+
                 else:
                     sig_mark = '\\phantom{$^*$}'
             elif i == 3:
                 if mmnl_dlcl_wilcoxon_p < p_thresh:
                     sig_mark = '$^{\dagger}$'
+                    # txt = axes[fig_num // n_cols, fig_num % n_cols].text(3, dlcl, '**', ha='center', va='top', color='white', fontsize=11)
+                    # txt.set_path_effects([patheffects.withStroke(linewidth=2, foreground='black')])
+
                 else:
                     sig_mark = '\\phantom{$^{\dagger}$}'
 
@@ -145,7 +179,23 @@ def make_prediction_table(datasets):
                 print(f' & {int(mmnl_dlcl_wilcoxon_W) if mmnl_dlcl_wilcoxon_W else "---"} & ${sci_not(mmnl_dlcl_wilcoxon_p)}$', end='')
 
         print('\\\\')
+        
+        fig_num += 2 if j == 6 or j == 13 else 1
 
+
+    axes[0, 7].legend(*axes[0, 0].get_legend_handles_labels(), prop={'size': 9})
+    axes[0, 7].axis('off')
+    axes[1, 7].axis('off')
+
+    axes[0, 0].set_ylabel('Mean Rel. Rank', fontsize=10)
+    axes[1, 0].set_ylabel('Mean Rel. Rank', fontsize=10)
+    axes[2, 0].set_ylabel('Mean Rel. Rank', fontsize=10)
+
+
+    plt.subplots_adjust(wspace=0.4, hspace=0.2)
+    # plt.show()
+    plt.savefig('lcl_prediction.pdf', bbox_inches='tight')
+    plt.close()
 
 def visualize_context_effects(datasets):
     fig, axes = plt.subplots(4, 4, figsize=(10, 10))
@@ -721,7 +771,7 @@ if __name__ == '__main__':
     visualize_context_effects_l1_reg(datasets.NETWORK_DATASETS, LCL)
     visualize_context_effects_l1_reg(datasets.NETWORK_DATASETS, DLCL)
 
-    # compute_all_accuracies(datasets.ALL_DATASETS)
+    compute_all_accuracies(datasets.ALL_DATASETS)
     make_prediction_table(datasets.ALL_DATASETS)
 
 
