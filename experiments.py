@@ -8,6 +8,7 @@ from multiprocessing.pool import Pool
 import numpy as np
 import torch
 from tqdm import tqdm
+from scipy import stats
 
 from datasets import ALL_DATASETS, SushiDataset, ExpediaDataset, CarAltDataset
 from models import train_mnl, MNL, LCL, train_lcl, DLCL, train_dlcl, context_mixture_em, train_mixed_logit, MixedLogit, \
@@ -341,41 +342,58 @@ def check_lcl_identifiability(datasets):
         print(f'\\textsc{{{dataset.name}}} & {kron_text} & {choice_set_text}\\\\')
 
 
-def biggest_context_effect_helper(args):
-    dataset, index, row, col, A_pq = args
-
-    graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
-    all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
-
-    model, train_losses, _, _, _ = train_model(LCL(dataset.num_features), all_data, all_data,
-                                                        dataset.best_lr(LCL), 0.001, False, 60, (row, col))
-
-    return (dataset, index), (row, col, A_pq, model.A[row, col].item(), train_losses)
-
-
-def biggest_context_effects(datasets, num=5):
-    params = []
-
-    for dataset in datasets:
-        model = LCL(dataset.num_features)
-        model.load_state_dict(torch.load(f'{PARAM_DIR}/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt'))
-        contexts = model.A.data.numpy()
-
-        max_abs_idx = np.dstack(np.unravel_index(np.argsort(-abs(contexts).ravel()), contexts.shape))[0]
-
-        for index, (row, col) in enumerate(max_abs_idx[:num]):
-            params.append((dataset, index, row, col, contexts[row, col]))
+def context_effect_significance(datasets):
 
     results = dict()
-    pool = Pool(THREADS)
 
-    for key, val in tqdm(pool.imap_unordered(biggest_context_effect_helper, params), total=len(params)):
-        results[key] = val
+    for dataset in datasets:
+        print('Computing significance for', dataset)
 
-    pool.close()
-    pool.join()
+        model = LCL(dataset.num_features)
+        model.load_state_dict(torch.load(f'{PARAM_DIR}/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt'))
 
-    filename = f'{RESULTS_DIR}/biggest_context_effects.pickle'
+        graph, train_data, val_data, test_data, means, stds = dataset.load_standardized()
+        all_data = [torch.cat([train_data[i], val_data[i], test_data[i]]) for i in range(3, len(train_data))]
+
+        samples = len(all_data[0])
+
+        num_params = sum(param.numel() for param in model.parameters() if param.requires_grad)
+
+        fisher_matrix = torch.zeros((num_params, num_params))
+        for sample in tqdm(range(samples)):
+            row = [tensor[[sample]] for tensor in all_data]
+
+            model.zero_grad()
+
+            choice = row[-1]
+
+            choice_pred = model(*row[:-1])
+
+            # Need gradient at each sample, so compute loss at one sample
+            loss = model.loss(choice_pred, choice)
+            loss.backward(retain_graph=True)
+            gradient = torch.cat([param.grad.flatten() for param in model.parameters()])
+
+            # Fisher information matrix is sum of outer products of gradients at each sample
+            fisher_matrix += torch.outer(gradient, gradient)
+
+        fisher_matrix /= samples
+        fisher_matrix = fisher_matrix.numpy()
+        covariance = np.linalg.inv(fisher_matrix)
+        std_errs = np.sqrt(np.diagonal(covariance) / samples)
+
+        theta = model.theta.detach()
+        A = model.A.detach()
+
+        theta_std = std_errs[:dataset.num_features]
+        A_std = std_errs[dataset.num_features:].reshape(dataset.num_features, dataset.num_features)
+
+        theta_p = stats.norm.sf(np.abs(theta / theta_std)) * 2
+        A_p = stats.norm.sf(np.abs(A / A_std)) * 2
+
+        results[dataset] = theta, theta_std, theta_p, A, A_std, A_p
+
+    filename = f'{RESULTS_DIR}/context_effect_significance.pickle'
     with open(filename, 'wb') as f:
         pickle.dump(results, f)
 
@@ -402,7 +420,7 @@ if __name__ == '__main__':
 
     all_experiments(ALL_DATASETS)  # Must be run after em_grid_search
 
-    biggest_context_effects([SushiDataset, ExpediaDataset, CarAltDataset])  # Must be run after all_experiments
+    context_effect_significance([SushiDataset, ExpediaDataset])  # Must be run after all_experiments
 
     check_lcl_identifiability(ALL_DATASETS)
 

@@ -696,29 +696,22 @@ def visualize_context_effects_l1_reg_general_choice_dataset(dataset, method):
     plt.close()
 
 
-def make_biggest_context_effect_table(dataset, num=5):
-    with open(f'{CONFIG_DIR}/learning_rate_settings.pickle', 'rb') as f:
-        grid_search_data, lrs = pickle.load(f)
+def make_context_effect_significance_table(dataset, num=5):
 
-    mnl_likelihood = min([grid_search_data[dataset, MNL, lr] for lr in lrs])
-
-    print(f'\n\nContext effects in {dataset.name}:')
-    model = load_model(LCL, dataset.num_features,
-                               f'{PARAM_DIR}/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt')
-
-    with open(f'{RESULT_DIR}/biggest_context_effects.pickle', 'rb') as f:
+    with open(f'{RESULT_DIR}/context_effect_significance.pickle', 'rb') as f:
         data = pickle.load(f)
 
-    for i in range(num):
-        row, col, A_pq, A_pq_only, train_losses = data[dataset, i]
-        statistic = 2*(mnl_likelihood - train_losses[-1])
-        p = stats.chi2.sf(statistic, 1)
+    theta, theta_std, theta_p, A, A_std, A_p = data[dataset]
 
-        print(f'\\emph{{{dataset.feature_names[col].lower()}}} on \\emph{{{dataset.feature_names[row].lower()}}} & ${A_pq:.2f}$ & ${A_pq_only:.2f}$ & ${statistic:.2f}$ & ${sci_not(p)}$\\\\')
+    sorted_rows, sorted_cols = np.unravel_index(np.argsort(np.abs(A).ravel()), (dataset.num_features, dataset.num_features))
+
+    for i in range(num):
+        row, col = sorted_rows[-1-i], sorted_cols[-1-i]
+        print(f'\\emph{{{dataset.feature_names[col].lower()}}} on \\emph{{{dataset.feature_names[row].lower()}}} & ${A[row, col]:.2f}$ $({A_std[row, col]:.2f}) $ & ${sci_not(A_p[row, col])}$\\\\')
 
     print('base uts:')
     for i, name in enumerate(dataset.feature_names):
-        print(name, f'{model.theta[i].item():.2f}')
+        print(name, f'{theta[i]:.2f} \pm {theta_std[i]:.2g}')
     print()
 
 
@@ -750,9 +743,8 @@ def compare_em_to_sgd(datasets):
 
 
 if __name__ == '__main__':
-    make_biggest_context_effect_table(CarAltDataset)
-    make_biggest_context_effect_table(ExpediaDataset)
-    make_biggest_context_effect_table(SushiDataset)
+    make_context_effect_significance_table(ExpediaDataset)
+    make_context_effect_significance_table(SushiDataset)
 
     make_likelihood_table(datasets.ALL_DATASETS)
     make_big_likelihood_table(datasets.ALL_DATASETS)
