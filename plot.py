@@ -102,7 +102,7 @@ def make_prediction_table(datasets):
     fig_num = 0
 
     colors = ["#dc622c", "#8b4acc", "#84c440", "#d93b8e"]
-    names = ['MNL', 'LCL', 'Mixed logit', 'DLCL']
+    names = ['CL', 'LCL', 'Mixed logit', 'DLCL']
     markers = ['o', '^', 's', 'D']
 
     for j, dataset in enumerate(datasets):
@@ -122,11 +122,11 @@ def make_prediction_table(datasets):
 
 
 
-        # axes[fig_num // n_cols, fig_num % n_cols].text(0.5, 0.85, dataset.name, ha='center', va='center',
+        # axes[fig_num // n_cols, fig_num % n_cols].text(0.5, 0.85, dataset.name.replace('-mnl', '-cl'), ha='center', va='center',
         #                                                bbox=dict(facecolor='white', alpha=0.8, pad=0, edgecolor='white',
         #                                                          boxstyle='round,pad=0.2'),
         #                                                transform=axes[fig_num // n_cols, fig_num % n_cols].transAxes)
-        axes[fig_num // n_cols, fig_num % n_cols].set_title(dataset.name, fontsize=11, pad=3)
+        axes[fig_num // n_cols, fig_num % n_cols].set_title(dataset.name.replace('-mnl', '-cl'), fontsize=11, pad=3)
         axes[fig_num // n_cols, fig_num % n_cols].set_xticks([])
         axes[fig_num // n_cols, fig_num % n_cols].set_xlim(-0.5, 3.5)
         # axes[fig_num // n_cols, fig_num % n_cols].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
@@ -148,7 +148,7 @@ def make_prediction_table(datasets):
             mmnl_dlcl_wilcoxon_p = 1
         p_thresh = 0.001
 
-        print(f'\\textsc{{{dataset.name}}}', end='')
+        print(f'\\textsc{{{dataset.name.replace("-mnl", "-cl")}}}', end='')
         for i, val in enumerate([mnl, lcl, mixed_mnl, dlcl]):
             sig_mark = ''
             if i == 1:
@@ -218,7 +218,7 @@ def visualize_context_effects(datasets):
         print(dataset.name, contexts)
 
         axes[row, col].axis('off')
-        axes[row, col].set_title(dataset.name, pad=0.1)
+        axes[row, col].set_title(dataset.name.replace('-mnl', '-cl'), pad=0.1)
 
     # norm = mpl.colors.Normalize(vmin=-1, vmax=1)
 
@@ -268,7 +268,7 @@ def visualize_context_effects_l1_reg(datasets, method):
             ax = fig.add_subplot(gs[row, col])
 
             if col == 0:
-                ax.set_ylabel(dataset.name, rotation='horizontal', ha='right', fontsize=14, va='center')
+                ax.set_ylabel(dataset.name.replace('-mnl', '-cl'), rotation='horizontal', ha='right', fontsize=14, va='center')
             if row == 0:
                 if col == 0:
                     ax.set_title(f'$\\lambda=${reg_param}', fontsize=12)
@@ -328,139 +328,6 @@ def visualize_context_effects_l1_reg(datasets, method):
     plt.close()
 
 
-def lcl_context_effect_tsne(datasets):
-    vectors = []
-    matrix_map = dict()
-
-    for i, dataset in enumerate(datasets):
-        model = load_model(LCL, 6, f'{PARAM_DIR}/lcl_{dataset.name}_params_{dataset.best_lr(LCL)}_0.001.pt')
-        flat = model.A.data.numpy().flatten()
-        flat /= np.linalg.norm(flat)
-        vectors.append(flat)
-        matrix_map[dataset] = flat.reshape(6, 6)
-
-    vectors = np.array(vectors)
-
-    tsne = TSNE(n_components=2, random_state=1, perplexity=1.5)
-    projected = tsne.fit_transform(vectors)
-
-    fig, main_ax = plt.subplots(1)
-
-    plt.scatter(projected[:, 0], projected[:, 1])
-    # plt.title('Learned LCL Context Effect t-SNE')
-    plt.box(on=None)
-    plt.xticks([])
-    plt.yticks([])
-
-    offsets = {dataset.name: (5, 0) for dataset in datasets}
-    has = {dataset.name: 'left' for dataset in datasets}
-    vas = {dataset.name: 'center' for dataset in datasets}
-
-    has['email-W3C'] = 'right'
-    has['sms-b'] = 'right'
-    has['bitcoin-alpha'] = 'right'
-    has['bitcoin-otc'] = 'right'
-
-    offsets['reddit-hyperlink'] = (0, 8)
-    offsets['email-W3C'] = (-5, 0)
-    offsets['wiki-talk'] = (-12, -11)
-
-    offsets['sms-b'] = (-5, 0)
-    offsets['bitcoin-alpha'] = (-5, 2)
-    offsets['bitcoin-otc'] = (-5, -2)
-    offsets['email-enron'] = (5, -2)
-
-    for i, txt in enumerate([dataset.name for dataset in datasets]):
-        plt.annotate(txt, xy=projected[i], horizontalalignment=has[txt], verticalalignment=vas[txt], xytext=offsets[txt], textcoords='offset points')
-
-    vscale = 0.5
-
-    # mathoverflow + facebook-wall + sms
-    cluster_datasets = [MathOverflowDataset, FacebookWallDataset, SMSADataset, SMSBDataset, SMSCDataset]
-    cluster_matrices = [matrix_map[d] for d in cluster_datasets]
-    cluster_matrix = np.mean(cluster_matrices, axis=0)
-    ax = plt.axes([.25, .6, .1, .1])
-    ax.matshow(cluster_matrix, cmap='bwr', vmax=vscale, vmin=-vscale, interpolation='nearest')
-    ax.set_xticks([])
-    ax.set_yticks([])
-    rect = patches.Rectangle((-370, -340), 300, 520, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
-    main_ax.add_patch(rect)
-
-    # email-w3c + email-enron + college-msg
-    cluster_datasets = [EmailW3CDataset, EmailEnronDataset, CollegeMsgDataset]
-    cluster_matrices = [matrix_map[d] for d in cluster_datasets]
-    cluster_matrix = np.mean(cluster_matrices, axis=0)
-    ax = plt.axes([.69, .62, .1, .1])
-    ax.matshow(cluster_matrix, cmap='bwr', vmax=vscale, vmin=-vscale, interpolation='nearest')
-    ax.set_xticks([])
-    ax.set_yticks([])
-    rect = patches.Rectangle((130, -40), 270, 410, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
-    main_ax.add_patch(rect)
-
-    # email-eu + wiki-talk + reddit-hyperlink
-    cluster_datasets = [EmailEUDataset, WikiTalkDataset, RedditHyperlinkDataset]
-    cluster_matrices = [matrix_map[d] for d in cluster_datasets]
-    cluster_matrix = np.mean(cluster_matrices, axis=0)
-    ax = plt.axes([.61, .38, .1, .1])
-    ax.matshow(cluster_matrix, cmap='bwr', vmax=vscale, vmin=-vscale, interpolation='nearest')
-    ax.set_xticks([])
-    ax.set_yticks([])
-    rect = patches.Rectangle((20, -450), 300, 390, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
-    main_ax.add_patch(rect)
-
-    # bitcoin
-    cluster_datasets = [BitcoinOTCDataset, BitcoinAlphaDataset]
-    cluster_matrices = [matrix_map[d] for d in cluster_datasets]
-    cluster_matrix = np.mean(cluster_matrices, axis=0)
-    ax = plt.axes([.63, .17, .1, .1])
-    ax.matshow(cluster_matrix, cmap='bwr', vmax=vscale, vmin=-vscale, interpolation='nearest')
-    ax.set_xticks([])
-    ax.set_yticks([])
-    rect = patches.Rectangle((-120, -800), 390, 260, linewidth=1, edgecolor='black', facecolor='none', alpha=0.25)
-    main_ax.add_patch(rect)
-
-    plt.savefig('lcl-tsne.pdf', bbox_inches='tight')
-    plt.close()
-
-
-def dlcl_context_effect_tsne(datasets):
-    matrices = []
-
-    for i, dataset in enumerate(datasets):
-        model = load_model(DLCL, 6, f'{PARAM_DIR}/dlcl_{dataset.name}_params_{dataset.best_lr(DLCL)}_0.001.pt')
-
-        flat = model.A.data.numpy().flatten()
-        matrices.append(flat / np.linalg.norm(flat))
-
-    matrices = np.array(matrices)
-
-    tsne = TSNE(n_components=2, random_state=0, perplexity=3)
-    projected = tsne.fit_transform(matrices)
-
-    plt.scatter(projected[:, 0], projected[:, 1])
-
-    offsets = {dataset.name: (5, 0) for dataset in datasets}
-    has = {dataset.name: 'left' for dataset in datasets}
-    vas = {dataset.name: 'center' for dataset in datasets}
-
-    has['synthetic-cdm'] = 'right'
-    has['synthetic-mnl'] = 'right'
-    has['mathoverflow'] = 'right'
-
-    offsets['synthetic-cdm'] = (-5, 0)
-    offsets['synthetic-mnl'] = (-3, -7)
-    offsets['mathoverflow'] = (0, -10)
-
-    for i, txt in enumerate([dataset.name for dataset in datasets]):
-        plt.annotate(txt, xy=projected[i], horizontalalignment=has[txt], verticalalignment=vas[txt],
-                     xytext=offsets[txt], textcoords='offset points')
-
-    plt.title('Learned LCL Context Effect t-SNE')
-    plt.savefig('dlcl-tsne.pdf', bbox_inches='tight')
-    plt.close()
-
-
-
 def plot_binned_mnl_example():
     # _, _, _, _, mathoverflow_means, mathoverflow_stds = MathOverflowDataset.load_standardized()
     # _, _, _, _, synthetic_mnl_means, synthetic_mnl_stds = SyntheticMNLDataset.load_standardized()
@@ -513,7 +380,7 @@ def plot_binned_mnl_example():
 
             axes[row, col].set_xscale('log')
 
-    axes[0, 1].text(1.05, 0.5, 'synthetic-mnl', rotation=270, size=12, ha='left', va='center', transform=axes[0, 1].transAxes)
+    axes[0, 1].text(1.05, 0.5, 'synthetic-cl', rotation=270, size=12, ha='left', va='center', transform=axes[0, 1].transAxes)
     axes[1, 1].text(1.05, 0.5, 'mathoverflow', rotation=270, size=12, ha='left', va='center', transform=axes[1, 1].transAxes)
     axes[2, 1].text(1.05, 0.5, 'email-enron', rotation=270, size=12, ha='left', va='center', transform=axes[2, 1].transAxes)
 
@@ -544,7 +411,7 @@ def make_likelihood_table(all_datasets):
     methods = [MNL, LCL, MixedLogit, DLCL]
 
     for dataset in all_datasets:
-        print(f'\\textsc{{{dataset.name}}}', end='')
+        print(f'\\textsc{{{dataset.name.replace("-mnl", "-cl")}}}', end='')
 
         best_nll_overall = min(int(data[dataset, method, lr]) for lr in lrs for method in methods)
 
@@ -577,7 +444,7 @@ def make_big_likelihood_table(all_datasets):
     methods = [MNL, LCL, MixedLogit, DLCL]
 
     for dataset in all_datasets:
-        print(f'\\textsc{{{dataset.name}}}', end='')
+        print(f'\\textsc{{{dataset.name.replace("-mnl", "-cl")}}}', end='')
 
         best_nll_overall = min(int(data[dataset, method, lr]) for lr in lrs for method in methods)
 
@@ -638,7 +505,7 @@ def visualize_context_effects_l1_reg_general_choice_dataset(dataset, method):
         ax = fig.add_subplot(gs[col])
 
         if col == 0:
-            ax.set_ylabel(dataset.name, rotation='horizontal', ha='right', fontsize=14, va='center')
+            ax.set_ylabel(dataset.name.replace('-mnl', '-cl'), rotation='horizontal', ha='right', fontsize=14, va='center')
             ax.set_title(f'$\\lambda=${reg_param}', fontsize=12)
         else:
             ax.set_title(f'{reg_param}', fontsize=12)
@@ -739,7 +606,7 @@ def compare_em_to_sgd(datasets):
         if em_nll == min(sgd_nll, em_nll):
             em = f'\\textbf{{{em_nll}}}'
 
-        print(f'\\textsc{{{dataset.name}}} & {sgd} & {em}\\\\')
+        print(f'\\textsc{{{dataset.name.replace("-mnl", "-cl")}}} & {sgd} & {em}\\\\')
 
 
 if __name__ == '__main__':
@@ -751,9 +618,6 @@ if __name__ == '__main__':
     compare_em_to_sgd(datasets.ALL_DATASETS)
 
     plot_binned_mnl_example()
-
-    lcl_context_effect_tsne(datasets.REAL_NETWORK_DATASETS)
-    dlcl_context_effect_tsne(datasets.REAL_NETWORK_DATASETS)
 
     visualize_context_effects_l1_reg_general_choice_dataset(SushiDataset, LCL)
     visualize_context_effects_l1_reg_general_choice_dataset(DistrictSmartDataset, LCL)
